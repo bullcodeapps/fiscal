@@ -1,0 +1,5 @@
+{
+  "main": "../dist/nfse/index.cjs",
+  "module": "../dist/nfse/index.js",
+  "types": "../dist/nfse/index.d.cts"
+}
