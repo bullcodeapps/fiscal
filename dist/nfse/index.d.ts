@@ -5,9 +5,9 @@ import { E as Environment, C as Certificate } from '../environment-fHjUnJ9t.js';
  * official layout names, so each one can be looked up in the Anexo I / VI
  * spreadsheets of the NFS-e Nacional documentation.
  *
- * Layout: what Sefin Nacional 1.6.0 accepts (validated against produção
- * restrita on 2026-10-26). NT 009 moves more fields (regApIBSCBSSN, indDest
- * outside IBSCBS) but the live schema does not take them yet.
+ * Layout: Sefin validates each environment against a different schema.
+ * Produção runs nfse-esquemas_xsd-v1-01-20260209; produção restrita already
+ * runs the NT 009 one (esquemas_prod_restrita_20261020). test/xsd holds both.
  */
 interface Address {
     /** IBGE municipality code, 7 digits. */

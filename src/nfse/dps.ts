@@ -8,9 +8,9 @@ export type { Environment };
  * official layout names, so each one can be looked up in the Anexo I / VI
  * spreadsheets of the NFS-e Nacional documentation.
  *
- * Layout: what Sefin Nacional 1.6.0 accepts (validated against produção
- * restrita on 2026-10-26). NT 009 moves more fields (regApIBSCBSSN, indDest
- * outside IBSCBS) but the live schema does not take them yet.
+ * Layout: Sefin validates each environment against a different schema.
+ * Produção runs nfse-esquemas_xsd-v1-01-20260209; produção restrita already
+ * runs the NT 009 one (esquemas_prod_restrita_20261020). test/xsd holds both.
  */
 
 export interface Address {
@@ -170,10 +170,17 @@ function totTrib(value: TotTrib): string {
   );
 }
 
-function ibsCbs(value: IbsCbs | undefined): string {
+/** Flip to every environment once NT 009 reaches produção. */
+function usesNt009Layout(environment: Environment): boolean {
+  return environment === "restricted";
+}
+
+function ibsCbs(value: IbsCbs | undefined, nt009: boolean): string {
   if (!value) return "";
+  const situation = [leaf("CST", value.CST), leaf("cClassTrib", value.cClassTrib)];
   return group(
     "IBSCBS",
+    nt009 ? "" : leaf("finNFSe", 0),
     leaf("indFinal", value.indFinal),
     leaf("cIndOp", value.cIndOp),
     leaf("indDest", value.indDest),
@@ -187,7 +194,7 @@ function ibsCbs(value: IbsCbs | undefined): string {
     ),
     group(
       "valores",
-      group("trib", leaf("CST", value.CST), leaf("cClassTrib", value.cClassTrib)),
+      group("trib", nt009 ? situation.join("") : group("gIBSCBS", ...situation)),
     ),
   );
 }
@@ -200,6 +207,7 @@ export function buildDps(input: DpsInput): BuiltDps {
     nDPS: input.nDPS,
   });
   const { prest, serv, valores } = input;
+  const nt009 = usesNt009Layout(input.environment);
 
   const infDps =
     `<infDPS Id="${id}">` +
@@ -210,7 +218,7 @@ export function buildDps(input: DpsInput): BuiltDps {
     leaf("nDPS", input.nDPS) +
     leaf("dCompet", input.dCompet) +
     leaf("tpEmit", 1) +
-    leaf("finNFSe", 0) +
+    (nt009 ? leaf("finNFSe", 0) : "") +
     leaf("cLocEmi", input.cLocEmi) +
     group(
       "prest",
@@ -231,8 +239,9 @@ export function buildDps(input: DpsInput): BuiltDps {
         "cServ",
         leaf("cTribNac", serv.cTribNac),
         leaf("cTribMun", serv.cTribMun),
-        leaf("cNBS", serv.cNBS),
+        nt009 ? leaf("cNBS", serv.cNBS) : "",
         leaf("xDescServ", serv.xDescServ),
+        nt009 ? "" : leaf("cNBS", serv.cNBS),
       ),
     ) +
     group(
@@ -249,7 +258,7 @@ export function buildDps(input: DpsInput): BuiltDps {
         totTrib(valores.totTrib),
       ),
     ) +
-    ibsCbs(input.IBSCBS) +
+    ibsCbs(input.IBSCBS, nt009) +
     "</infDPS>";
 
   return {
