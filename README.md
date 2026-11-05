@@ -40,9 +40,14 @@ Anexo I / VI spreadsheets at https://www.gov.br/nfse/pt-br/biblioteca/documentac
 
 ## Layout
 
-The builder targets what Sefin Nacional 1.6.0 accepts, checked against produção restrita on 2026-10-26
-(`test/fixtures` holds the DPS bodies it authorized). NT 009 fields the live schema still rejects
-(`regApIBSCBSSN`, `indDest` outside `IBSCBS`) are not emitted yet.
+Sefin validates each environment against its own schema, and `buildDps` follows `environment`:
+
+- produção: `nfse-esquemas_xsd-v1-01-20260209` (`finNFSe` inside `IBSCBS`, `gIBSCBS`, `cNBS` after `xDescServ`)
+- produção restrita: the NT 009 schema `esquemas_prod_restrita_20261020` (`test/fixtures` holds DPS bodies it authorized)
+
+`test/xsd` holds both schema sets and `test/schema.test.ts` validates the builder against them. When NT 009 reaches
+produção, flip `usesNt009Layout` and replace `test/xsd/production`. The XSD copies drop the `^…$` anchors from their
+patterns, which libxml2 would otherwise read as literal characters.
 
 ## Smoke test
 

@@ -1,6 +1,6 @@
 {
   "name": "@bullcode/fiscal",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Brazilian fiscal documents: NFS-e Nacional emission (DPS build, XMLDSig signing, Sefin mTLS client)",
   "license": "UNLICENSED",
@@ -62,6 +62,7 @@
     "@types/qrcode": "^1.5.6",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "xmllint-wasm": "5.3.0"
   }
 }
