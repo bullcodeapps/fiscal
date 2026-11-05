@@ -45,6 +45,9 @@ importers:
       vitest:
         specifier: ^3.2.7
         version: 3.2.7(@types/node@20.19.43)
+      xmllint-wasm:
+        specifier: 5.3.0
+        version: 5.3.0(@types/node@20.19.43)
 
 packages:
 
@@ -1138,6 +1141,12 @@ packages:
     resolution: {integrity: sha512-ghig2TBE/H11aOVgmahA3MhimvkBr6JIYknH/Dhdk10nXwdbIqBJsbfMxpvFPG8bAw77gN29aQWvKpmVoPlvPQ==}
     engines: {node: '>=16.0.0'}
 
+  xmllint-wasm@5.3.0:
+    resolution: {integrity: sha512-sEgRXdf2t13eYCFCURmCE6h2hwleEOIS9VL/jOh9JJJnez2YXIooi2Ghm05/JZEPXyPawN8sMASPVZlmh8Sd6A==}
+    engines: {node: '>=16'}
+    peerDependencies:
+      '@types/node': '>=16'
+
   xpath@0.0.33:
     resolution: {integrity: sha512-NNXnzrkDrAzalLhIUc01jO2mOzXGXh1JwPgkihcLLzw98c0WgYDmmjSh1Kl3wzaxSVWMuA+fe0WTWOBDWCBmNA==}
     engines: {node: '>=0.6.0'}
@@ -2048,6 +2057,10 @@ snapshots:
       xpath: 0.0.33
 
   xml-naming@0.3.0: {}
+
+  xmllint-wasm@5.3.0(@types/node@20.19.43):
+    dependencies:
+      '@types/node': 20.19.43
 
   xpath@0.0.33: {}
 

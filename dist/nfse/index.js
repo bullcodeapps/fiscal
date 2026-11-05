@@ -58,10 +58,15 @@ function totTrib(value) {
     "pTotTribSN" in value ? leaf("pTotTribSN", decimal(value.pTotTribSN)) : leaf("indTotTrib", value.indTotTrib)
   );
 }
-function ibsCbs(value) {
+function usesNt009Layout(environment) {
+  return environment === "restricted";
+}
+function ibsCbs(value, nt009) {
   if (!value) return "";
+  const situation = [leaf("CST", value.CST), leaf("cClassTrib", value.cClassTrib)];
   return group(
     "IBSCBS",
+    nt009 ? "" : leaf("finNFSe", 0),
     leaf("indFinal", value.indFinal),
     leaf("cIndOp", value.cIndOp),
     leaf("indDest", value.indDest),
@@ -75,7 +80,7 @@ function ibsCbs(value) {
     ),
     group(
       "valores",
-      group("trib", leaf("CST", value.CST), leaf("cClassTrib", value.cClassTrib))
+      group("trib", nt009 ? situation.join("") : group("gIBSCBS", ...situation))
     )
   );
 }
@@ -87,7 +92,8 @@ function buildDps(input) {
     nDPS: input.nDPS
   });
   const { prest, serv, valores } = input;
-  const infDps = `<infDPS Id="${id}">` + leaf("tpAmb", input.environment === "production" ? 1 : 2) + leaf("dhEmi", brazilDateTime(input.dhEmi)) + leaf("verAplic", input.verAplic) + leaf("serie", input.serie) + leaf("nDPS", input.nDPS) + leaf("dCompet", input.dCompet) + leaf("tpEmit", 1) + leaf("finNFSe", 0) + leaf("cLocEmi", input.cLocEmi) + group(
+  const nt009 = usesNt009Layout(input.environment);
+  const infDps = `<infDPS Id="${id}">` + leaf("tpAmb", input.environment === "production" ? 1 : 2) + leaf("dhEmi", brazilDateTime(input.dhEmi)) + leaf("verAplic", input.verAplic) + leaf("serie", input.serie) + leaf("nDPS", input.nDPS) + leaf("dCompet", input.dCompet) + leaf("tpEmit", 1) + (nt009 ? leaf("finNFSe", 0) : "") + leaf("cLocEmi", input.cLocEmi) + group(
     "prest",
     leaf("CNPJ", prest.CNPJ),
     leaf("IM", prest.IM),
@@ -104,8 +110,9 @@ function buildDps(input) {
       "cServ",
       leaf("cTribNac", serv.cTribNac),
       leaf("cTribMun", serv.cTribMun),
-      leaf("cNBS", serv.cNBS),
-      leaf("xDescServ", serv.xDescServ)
+      nt009 ? leaf("cNBS", serv.cNBS) : "",
+      leaf("xDescServ", serv.xDescServ),
+      nt009 ? "" : leaf("cNBS", serv.cNBS)
     )
   ) + group(
     "valores",
@@ -120,7 +127,7 @@ function buildDps(input) {
       ),
       totTrib(valores.totTrib)
     )
-  ) + ibsCbs(input.IBSCBS) + "</infDPS>";
+  ) + ibsCbs(input.IBSCBS, nt009) + "</infDPS>";
   return {
     id,
     xml: `<DPS xmlns="${NAMESPACE}" versao="${LAYOUT_VERSION}">${infDps}</DPS>`
