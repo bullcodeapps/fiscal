@@ -52,6 +52,16 @@ const consumerDps = (environment: Environment): DpsInput => ({
   IBSCBS: { indFinal: 1, cIndOp: "100301", indDest: 0, CST: "000", cClassTrib: "000001" },
 });
 
+const foreignAddress = {
+  cPais: "US",
+  cEndPost: "94105",
+  xCidade: "San Francisco",
+  xEstProvReg: "CA",
+  xLgr: "Market St",
+  nro: "1",
+  xBairro: "SoMa",
+};
+
 const exportDps = (environment: Environment, toma: DpsInput["toma"]): DpsInput => ({
   ...consumerDps(environment),
   toma,
@@ -82,19 +92,7 @@ describe("Sefin schemas", () => {
   it.each<Environment>(["production", "restricted"])(
     "an export DPS to a foreign taker with NIF matches the %s schema",
     async (environment) => {
-      const dps = exportDps(environment, {
-        NIF: "98-7654321",
-        xNome: "ACME INC",
-        end: {
-          cPais: "US",
-          cEndPost: "94105",
-          xCidade: "San Francisco",
-          xEstProvReg: "CA",
-          xLgr: "Market St",
-          nro: "1",
-          xBairro: "SoMa",
-        },
-      });
+      const dps = exportDps(environment, { NIF: "98-7654321", xNome: "ACME INC", end: foreignAddress });
       expect(await validate(environment, "DPS_v1.01.xsd", buildDps(dps).xml)).toEqual([]);
     },
   );
@@ -102,7 +100,7 @@ describe("Sefin schemas", () => {
   it.each<Environment>(["production", "restricted"])(
     "an export DPS to a foreign taker without NIF matches the %s schema",
     async (environment) => {
-      const dps = exportDps(environment, { cNaoNIF: 2, xNome: "ACME INC" });
+      const dps = exportDps(environment, { cNaoNIF: 2, xNome: "ACME INC", end: foreignAddress });
       expect(await validate(environment, "DPS_v1.01.xsd", buildDps(dps).xml)).toEqual([]);
     },
   );
