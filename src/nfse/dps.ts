@@ -13,15 +13,30 @@ export type { Environment };
  * runs the NT 009 one (esquemas_prod_restrita_20261020). test/xsd holds both.
  */
 
-export interface Address {
-  /** IBGE municipality code, 7 digits. */
-  cMun: string;
-  CEP: string;
+interface StreetAddress {
   xLgr: string;
   nro: string;
   xCpl?: string;
   xBairro: string;
 }
+
+export interface NationalAddress extends StreetAddress {
+  /** IBGE municipality code, 7 digits. */
+  cMun: string;
+  CEP: string;
+}
+
+export interface ForeignAddress extends StreetAddress {
+  /** ISO 3166-1 alpha-2 country code. */
+  cPais: string;
+  /** Postal code. */
+  cEndPost: string;
+  xCidade: string;
+  /** State, province or region. */
+  xEstProvReg: string;
+}
+
+export type Address = NationalAddress | ForeignAddress;
 
 export interface Provider {
   CNPJ: string;
@@ -35,23 +50,66 @@ export interface Provider {
   };
 }
 
-export type Taker = ({ CNPJ: string } | { CPF: string }) & {
+interface TakerBase {
   xNome: string;
-  /** Mandatory whenever the DPS declares IBS/CBS (E0239). */
-  end?: Address;
   fone?: string;
   email?: string;
-};
+}
+
+export type NationalTaker = TakerBase &
+  ({ CNPJ: string } | { CPF: string }) & {
+    /** Mandatory whenever the DPS declares IBS/CBS (E0239). */
+    end?: Address;
+  };
+
+/** A taker abroad. Sefin requires its foreign address (E0223). */
+export type ForeignTaker = TakerBase &
+  (
+    /** Tax ID issued abroad. */
+    | { NIF: string }
+    /** Reason for not informing the NIF: 0 not informed, 1 exempt, 2 not required. */
+    | { cNaoNIF: 0 | 1 | 2 }
+  ) & {
+    end: ForeignAddress;
+  };
+
+export type Taker = NationalTaker | ForeignTaker;
+
+/** Comércio exterior group (export of services). Codes follow tiposSimples_v1.01.xsd. */
+export interface ForeignTrade {
+  /** 0 Desconhecido, 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas. */
+  mdPrestacao: 0 | 1 | 2 | 3 | 4;
+  /** 0 Sem vínculo, 1 Controlada, 2 Controladora, 3 Coligada, 4 Matriz, 5 Filial, 6 Outro, 9 Desconhecido. */
+  vincPrest: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9;
+  /** BACEN currency code, 3 digits (e.g. "220" for USD). */
+  tpMoeda: string;
+  /** Service value in `tpMoeda`. */
+  vServMoeda: number;
+  /** Provider's foreign trade support mechanism, 2 digits ("01" none). */
+  mecAFComexP: string;
+  /** Taker's foreign trade support mechanism, 2 digits ("01" none). */
+  mecAFComexT: string;
+  /** 0 Desconhecido, 1 Não, 2 Vinculada a DI, 3 Vinculada a DE. */
+  movTempBens: 0 | 1 | 2 | 3;
+  nDI?: string;
+  nRE?: string;
+  /** 0 Não enviar, 1 Enviar ao MDIC. */
+  mdic: 0 | 1;
+}
 
 export interface Service {
   /** IBGE code of the municipality where the service is provided. */
-  cLocPrestacao: string;
+  cLocPrestacao?: string;
+  /** ISO country code where the service is provided. Exactly one of cLocPrestacao / cPaisPrestacao. */
+  cPaisPrestacao?: string;
   /** Código de Tributação Nacional, 6 digits without dots (e.g. "170303"). */
   cTribNac: string;
   cTribMun?: string;
   /** Mandatory whenever the DPS declares IBS/CBS (E0322). 9 digits, no dots. */
   cNBS?: string;
   xDescServ: string;
+  /** Present when the taker is abroad (export of services). */
+  comExt?: ForeignTrade;
 }
 
 export interface MovableGood {
@@ -141,7 +199,15 @@ function address(end: Address | undefined): string {
   if (!end) return "";
   return group(
     "end",
-    group("endNac", leaf("cMun", end.cMun), leaf("CEP", end.CEP)),
+    "cMun" in end
+      ? group("endNac", leaf("cMun", end.cMun), leaf("CEP", end.CEP))
+      : group(
+          "endExt",
+          leaf("cPais", end.cPais),
+          leaf("cEndPost", end.cEndPost),
+          leaf("xCidade", end.xCidade),
+          leaf("xEstProvReg", end.xEstProvReg),
+        ),
     leaf("xLgr", end.xLgr),
     leaf("nro", end.nro),
     leaf("xCpl", end.xCpl),
@@ -153,11 +219,45 @@ function taker(toma: Taker | undefined): string {
   if (!toma) return "";
   return group(
     "toma",
-    "CNPJ" in toma ? leaf("CNPJ", toma.CNPJ) : leaf("CPF", toma.CPF),
+    "CNPJ" in toma
+      ? leaf("CNPJ", toma.CNPJ)
+      : "CPF" in toma
+        ? leaf("CPF", toma.CPF)
+        : "NIF" in toma
+          ? leaf("NIF", toma.NIF)
+          : leaf("cNaoNIF", toma.cNaoNIF),
     leaf("xNome", toma.xNome),
     address(toma.end),
     leaf("fone", toma.fone),
     leaf("email", toma.email),
+  );
+}
+
+function locPrest(serv: Service): string {
+  if ((serv.cLocPrestacao === undefined) === (serv.cPaisPrestacao === undefined)) {
+    throw new Error("serv: exactly one of cLocPrestacao or cPaisPrestacao");
+  }
+  return group(
+    "locPrest",
+    leaf("cLocPrestacao", serv.cLocPrestacao),
+    leaf("cPaisPrestacao", serv.cPaisPrestacao),
+  );
+}
+
+function foreignTrade(value: ForeignTrade | undefined): string {
+  if (!value) return "";
+  return group(
+    "comExt",
+    leaf("mdPrestacao", value.mdPrestacao),
+    leaf("vincPrest", value.vincPrest),
+    leaf("tpMoeda", value.tpMoeda),
+    leaf("vServMoeda", decimal(value.vServMoeda)),
+    leaf("mecAFComexP", value.mecAFComexP),
+    leaf("mecAFComexT", value.mecAFComexT),
+    leaf("movTempBens", value.movTempBens),
+    leaf("nDI", value.nDI),
+    leaf("nRE", value.nRE),
+    leaf("mdic", value.mdic),
   );
 }
 
@@ -199,7 +299,28 @@ function ibsCbs(value: IbsCbs | undefined, nt009: boolean): string {
   );
 }
 
+/** Sefin business rules the XSD does not express. */
+function assertExportRules(input: DpsInput): void {
+  const { toma, serv, valores } = input;
+  const foreignId = toma !== undefined && ("NIF" in toma || "cNaoNIF" in toma);
+  const foreignAddress = toma?.end !== undefined && "cPais" in toma.end;
+
+  if (foreignId && !foreignAddress) {
+    throw new Error("toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)");
+  }
+  if (foreignAddress && !foreignId) {
+    throw new Error("toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF");
+  }
+  if (valores.tribISSQN === 3 && !serv.comExt) {
+    throw new Error("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
+  }
+  if (serv.comExt && toma && !foreignId) {
+    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF");
+  }
+}
+
 export function buildDps(input: DpsInput): BuiltDps {
+  assertExportRules(input);
   const id = dpsId({
     cLocEmi: input.cLocEmi,
     CNPJ: input.prest.CNPJ,
@@ -234,7 +355,7 @@ export function buildDps(input: DpsInput): BuiltDps {
     taker(input.toma) +
     group(
       "serv",
-      group("locPrest", leaf("cLocPrestacao", serv.cLocPrestacao)),
+      locPrest(serv),
       group(
         "cServ",
         leaf("cTribNac", serv.cTribNac),
@@ -243,6 +364,7 @@ export function buildDps(input: DpsInput): BuiltDps {
         leaf("xDescServ", serv.xDescServ),
         nt009 ? "" : leaf("cNBS", serv.cNBS),
       ),
+      foreignTrade(serv.comExt),
     ) +
     group(
       "valores",

@@ -2,6 +2,8 @@ import { XMLParser } from "fast-xml-parser";
 
 export interface NfseSummary {
   accessKey: string;
+  /** nNFSe, the number the municipality shows on the note. */
+  number: string | null;
   /** CNPJ or CPF digits of the taker; null when the note has none. */
   takerDocument: string | null;
   /** vServ in cents. */
@@ -28,6 +30,7 @@ export function readNfseSummary(nfseXml: string): NfseSummary {
   const description = infDps?.serv?.cServ?.xDescServ;
   return {
     accessKey: String(inf?.["@_Id"] ?? "").replace(/^NFS/, ""),
+    number: inf?.nNFSe === undefined ? null : String(inf.nNFSe),
     takerDocument: toma?.CNPJ ?? toma?.CPF ?? null,
     serviceValueCents: Math.round(Number(vServ ?? 0) * 100),
     competenceDate: infDps?.dCompet ?? null,
