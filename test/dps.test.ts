@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { SignedXml } from "xml-crypto";
 import { describe, expect, it } from "vitest";
 import { loadCertificate } from "../src";
-import { buildDps, signDps, type DpsInput } from "../src/nfse";
+import { buildDps, signDps, type DpsInput, type Taker } from "../src/nfse";
 import { makePfx } from "./make-pfx";
 
 const fixture = (name: string) =>
@@ -76,10 +76,21 @@ describe("buildDps", () => {
   });
 });
 
+const foreignAddress = {
+  cPais: "US",
+  cEndPost: "94105",
+  xCidade: "San Francisco",
+  xEstProvReg: "CA",
+  xLgr: "Market St",
+  nro: "1",
+  xBairro: "SoMa",
+};
+
 describe("export of services", () => {
   const exported: DpsInput = {
     ...accepted,
-    toma: { NIF: "98-7654321", xNome: "ACME INC" },
+    toma: { NIF: "98-7654321", xNome: "ACME INC", end: foreignAddress },
+    valores: { ...accepted.valores, tribISSQN: 3 },
     serv: {
       ...accepted.serv,
       comExt: {
@@ -103,6 +114,37 @@ describe("export of services", () => {
     expect(at("comExt")).toBeGreaterThan(xml.indexOf("</cServ>"));
     expect(at("comExt")).toBeLessThan(at("valores"));
     expect(xml).toContain("<vServMoeda>2000.00</vServMoeda>");
+  });
+
+  it.each([
+    {
+      name: "a NIF taker without a foreign address (E0223)",
+      toma: { NIF: "98-7654321", xNome: "ACME INC" } as Taker,
+      message: "toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)",
+    },
+    {
+      name: "a cNaoNIF taker with a national address (E0223)",
+      toma: { cNaoNIF: 2, xNome: "ACME INC", end: accepted.toma!.end } as unknown as Taker,
+      message: "toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)",
+    },
+    {
+      name: "a national taker with a foreign address",
+      toma: { CNPJ: "00000000000191", xNome: "BANCO DO BRASIL SA", end: foreignAddress } as Taker,
+      message: "toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF",
+    },
+    {
+      name: "comExt with a national taker",
+      toma: accepted.toma,
+      message: "serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF",
+    },
+  ])("rejects $name", ({ toma, message }) => {
+    expect(() => buildDps({ ...exported, toma })).toThrow(message);
+  });
+
+  it("rejects tribISSQN 3 without comExt (E0330)", () => {
+    expect(() =>
+      buildDps({ ...exported, serv: { ...exported.serv, comExt: undefined } }),
+    ).toThrow("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
   });
 
   it("rejects a service with both cLocPrestacao and cPaisPrestacao", () => {

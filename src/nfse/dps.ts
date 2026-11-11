@@ -50,20 +50,30 @@ export interface Provider {
   };
 }
 
-export type Taker = (
-  | { CNPJ: string }
-  | { CPF: string }
-  /** Tax ID issued abroad. */
-  | { NIF: string }
-  /** Reason for not informing the NIF: 0 not informed, 1 exempt, 2 not required. */
-  | { cNaoNIF: 0 | 1 | 2 }
-) & {
+interface TakerBase {
   xNome: string;
-  /** Mandatory whenever the DPS declares IBS/CBS (E0239). */
-  end?: Address;
   fone?: string;
   email?: string;
-};
+}
+
+export type NationalTaker = TakerBase &
+  ({ CNPJ: string } | { CPF: string }) & {
+    /** Mandatory whenever the DPS declares IBS/CBS (E0239). */
+    end?: Address;
+  };
+
+/** A taker abroad. Sefin requires its foreign address (E0223). */
+export type ForeignTaker = TakerBase &
+  (
+    /** Tax ID issued abroad. */
+    | { NIF: string }
+    /** Reason for not informing the NIF: 0 not informed, 1 exempt, 2 not required. */
+    | { cNaoNIF: 0 | 1 | 2 }
+  ) & {
+    end: ForeignAddress;
+  };
+
+export type Taker = NationalTaker | ForeignTaker;
 
 /** Comércio exterior group (export of services). Codes follow tiposSimples_v1.01.xsd. */
 export interface ForeignTrade {
@@ -289,7 +299,28 @@ function ibsCbs(value: IbsCbs | undefined, nt009: boolean): string {
   );
 }
 
+/** Sefin business rules the XSD does not express. */
+function assertExportRules(input: DpsInput): void {
+  const { toma, serv, valores } = input;
+  const foreignId = toma !== undefined && ("NIF" in toma || "cNaoNIF" in toma);
+  const foreignAddress = toma?.end !== undefined && "cPais" in toma.end;
+
+  if (foreignId && !foreignAddress) {
+    throw new Error("toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)");
+  }
+  if (foreignAddress && !foreignId) {
+    throw new Error("toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF");
+  }
+  if (valores.tribISSQN === 3 && !serv.comExt) {
+    throw new Error("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
+  }
+  if (serv.comExt && toma && !foreignId) {
+    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF");
+  }
+}
+
 export function buildDps(input: DpsInput): BuiltDps {
+  assertExportRules(input);
   const id = dpsId({
     cLocEmi: input.cLocEmi,
     CNPJ: input.prest.CNPJ,
