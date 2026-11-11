@@ -145,10 +145,12 @@ interface Party {
   /** The emitter's address lives in `enderNac`; DPS parties use `end/endNac`. */
   address: Node;
   nationalAddress: Node;
+  /** `end/endExt` of a taker abroad. */
+  foreignAddress?: Node;
 }
 
 function partyFields(party: Party, withMunicipalRegistration: boolean): DanfseField[][] {
-  const { node, address, nationalAddress } = party;
+  const { node, address, nationalAddress, foreignAddress } = party;
   const cMun = text(nationalAddress, "cMun");
   const cep = text(nationalAddress, "CEP")?.replace(/^(\d{2})(\d{3})(\d{3})$/, "$1.$2-$3");
   const street = [
@@ -167,8 +169,25 @@ function partyFields(party: Party, withMunicipalRegistration: boolean): DanfseFi
     ],
     [
       { label: "Nome / Nome Empresarial", value: or(text(node, "xNome")), col: 0, span: 2 },
-      { label: "Município / Sigla UF", value: cityUf(cMun), col: 2 },
-      { label: "Código IBGE / CEP", value: cMun || cep ? `${or(cMun)} / ${or(cep)}` : EMPTY, col: 3 },
+      ...(foreignAddress
+        ? [
+            {
+              label: "Cidade / Estado / País",
+              value: [text(foreignAddress, "xCidade"), text(foreignAddress, "xEstProvReg"), text(foreignAddress, "cPais")]
+                .map(or)
+                .join(" / "),
+              col: 2 as const,
+            },
+            {
+              label: "País / Código Postal",
+              value: `${or(text(foreignAddress, "cPais"))} / ${or(text(foreignAddress, "cEndPost"))}`,
+              col: 3 as const,
+            },
+          ]
+        : [
+            { label: "Município / Sigla UF", value: cityUf(cMun), col: 2 as const },
+            { label: "Código IBGE / CEP", value: cMun || cep ? `${or(cMun)} / ${or(cep)}` : EMPTY, col: 3 as const },
+          ]),
     ],
     [
       { label: "Endereço", value: street.length ? street.join(", ") : EMPTY, col: 0, span: 2 },
@@ -232,7 +251,7 @@ export function buildDanfseModel(nfseXml: string): DanfseModel {
     toma
       ? {
           title: "TOMADOR / ADQUIRENTE",
-          rows: partyFields({ node: toma, address: child(toma, "end"), nationalAddress: child(child(toma, "end"), "endNac") }, true),
+          rows: partyFields({ node: toma, address: child(toma, "end"), nationalAddress: child(child(toma, "end"), "endNac"), foreignAddress: child(child(toma, "end"), "endExt") }, true),
           rowHeight: 0.63,
         }
       : { title: "TOMADOR / ADQUIRENTE", message: "TOMADOR/ADQUIRENTE DA OPERAÇÃO NÃO IDENTIFICADO NA NFS-e", rows: [], rowHeight: 0.63 },
@@ -243,7 +262,7 @@ export function buildDanfseModel(nfseXml: string): DanfseModel {
     dest
       ? {
           title: "DESTINATÁRIO DA OPERAÇÃO",
-          rows: partyFields({ node: dest, address: child(dest, "end"), nationalAddress: child(child(dest, "end"), "endNac") }, false),
+          rows: partyFields({ node: dest, address: child(dest, "end"), nationalAddress: child(child(dest, "end"), "endNac"), foreignAddress: child(child(dest, "end"), "endExt") }, false),
           rowHeight: 0.63,
         }
       : {
@@ -261,7 +280,7 @@ export function buildDanfseModel(nfseXml: string): DanfseModel {
     interm
       ? {
           title: "INTERMEDIÁRIO DA OPERAÇÃO",
-          rows: partyFields({ node: interm, address: child(interm, "end"), nationalAddress: child(child(interm, "end"), "endNac") }, true),
+          rows: partyFields({ node: interm, address: child(interm, "end"), nationalAddress: child(child(interm, "end"), "endNac"), foreignAddress: child(child(interm, "end"), "endExt") }, true),
           rowHeight: 0.63,
         }
       : { title: "INTERMEDIÁRIO DA OPERAÇÃO", message: "INTERMEDIÁRIO DA OPERAÇÃO NÃO IDENTIFICADO NA NFS-e", rows: [], rowHeight: 0.63 },

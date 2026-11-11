@@ -38,6 +38,30 @@ try {
 `DpsInput` uses the official layout field names (`cTribNac`, `cNBS`, `cIndOp`, ...), so every field maps to the
 Anexo I / VI spreadsheets at https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica.
 
+## Export of services
+
+A taker abroad uses `NIF` (or `cNaoNIF`) and an `endExt` address. `serv.comExt` carries the foreign trade data, and
+`valores.tribISSQN` is `3`. Set exactly one of `cLocPrestacao` / `cPaisPrestacao`.
+
+```ts
+const dps = buildDps({
+  /* ...DpsInput */
+  toma: {
+    NIF: "98-7654321",
+    xNome: "ACME INC",
+    end: { cPais: "US", cEndPost: "94105", xCidade: "San Francisco", xEstProvReg: "CA", xLgr: "Market St", nro: "1", xBairro: "SoMa" },
+  },
+  serv: {
+    cLocPrestacao: "4208203",
+    cTribNac: "170303",
+    cNBS: "114012900",
+    xDescServ: "Software development services",
+    comExt: { mdPrestacao: 1, vincPrest: 0, tpMoeda: "220", vServMoeda: 2000, mecAFComexP: "01", mecAFComexT: "01", movTempBens: 1, mdic: 0 },
+  },
+  valores: { vServ: 10000, tribISSQN: 3, tpRetISSQN: 1, totTrib: { pTotTribSN: 6 } },
+});
+```
+
 ## Layout
 
 Sefin validates each environment against its own schema, and `buildDps` follows `environment`:
@@ -55,4 +79,10 @@ Emits one real note in produção restrita (no fiscal effect):
 
 ```sh
 pnpm build && node scripts/smoke-restricted.mjs cert.pfx password.txt
+```
+
+Same for an export note to a foreign taker:
+
+```sh
+pnpm build && node scripts/smoke-export-restricted.mjs cert.pfx password.txt
 ```
