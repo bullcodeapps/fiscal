@@ -10,7 +10,7 @@ Storage of certificates, numbering of DPS and persistence of issued notes belong
 ## Install
 
 ```sh
-pnpm add git+https://github.com/bullcodeapps/fiscal.git#v0.2.0
+pnpm add git+https://github.com/bullcodeapps/fiscal.git#v0.2.1
 ```
 
 `dist` is committed, so installs never build. Run `pnpm build` and commit `dist` before tagging a release.
