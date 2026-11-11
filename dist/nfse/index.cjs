@@ -73,7 +73,13 @@ function address(end) {
   if (!end) return "";
   return group(
     "end",
-    group("endNac", leaf("cMun", end.cMun), leaf("CEP", end.CEP)),
+    "cMun" in end ? group("endNac", leaf("cMun", end.cMun), leaf("CEP", end.CEP)) : group(
+      "endExt",
+      leaf("cPais", end.cPais),
+      leaf("cEndPost", end.cEndPost),
+      leaf("xCidade", end.xCidade),
+      leaf("xEstProvReg", end.xEstProvReg)
+    ),
     leaf("xLgr", end.xLgr),
     leaf("nro", end.nro),
     leaf("xCpl", end.xCpl),
@@ -84,11 +90,37 @@ function taker(toma) {
   if (!toma) return "";
   return group(
     "toma",
-    "CNPJ" in toma ? leaf("CNPJ", toma.CNPJ) : leaf("CPF", toma.CPF),
+    "CNPJ" in toma ? leaf("CNPJ", toma.CNPJ) : "CPF" in toma ? leaf("CPF", toma.CPF) : "NIF" in toma ? leaf("NIF", toma.NIF) : leaf("cNaoNIF", toma.cNaoNIF),
     leaf("xNome", toma.xNome),
     address(toma.end),
     leaf("fone", toma.fone),
     leaf("email", toma.email)
+  );
+}
+function locPrest(serv) {
+  if (serv.cLocPrestacao === void 0 === (serv.cPaisPrestacao === void 0)) {
+    throw new Error("serv: exactly one of cLocPrestacao or cPaisPrestacao");
+  }
+  return group(
+    "locPrest",
+    leaf("cLocPrestacao", serv.cLocPrestacao),
+    leaf("cPaisPrestacao", serv.cPaisPrestacao)
+  );
+}
+function foreignTrade(value) {
+  if (!value) return "";
+  return group(
+    "comExt",
+    leaf("mdPrestacao", value.mdPrestacao),
+    leaf("vincPrest", value.vincPrest),
+    leaf("tpMoeda", value.tpMoeda),
+    leaf("vServMoeda", decimal(value.vServMoeda)),
+    leaf("mecAFComexP", value.mecAFComexP),
+    leaf("mecAFComexT", value.mecAFComexT),
+    leaf("movTempBens", value.movTempBens),
+    leaf("nDI", value.nDI),
+    leaf("nRE", value.nRE),
+    leaf("mdic", value.mdic)
   );
 }
 function totTrib(value) {
@@ -123,7 +155,25 @@ function ibsCbs(value, nt009) {
     )
   );
 }
+function assertExportRules(input) {
+  const { toma, serv, valores } = input;
+  const foreignId = toma !== void 0 && ("NIF" in toma || "cNaoNIF" in toma);
+  const foreignAddress = toma?.end !== void 0 && "cPais" in toma.end;
+  if (foreignId && !foreignAddress) {
+    throw new Error("toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)");
+  }
+  if (foreignAddress && !foreignId) {
+    throw new Error("toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF");
+  }
+  if (valores.tribISSQN === 3 && !serv.comExt) {
+    throw new Error("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
+  }
+  if (serv.comExt && toma && !foreignId) {
+    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF");
+  }
+}
 function buildDps(input) {
+  assertExportRules(input);
   const id = dpsId({
     cLocEmi: input.cLocEmi,
     CNPJ: input.prest.CNPJ,
@@ -144,7 +194,7 @@ function buildDps(input) {
     )
   ) + taker(input.toma) + group(
     "serv",
-    group("locPrest", leaf("cLocPrestacao", serv.cLocPrestacao)),
+    locPrest(serv),
     group(
       "cServ",
       leaf("cTribNac", serv.cTribNac),
@@ -152,7 +202,8 @@ function buildDps(input) {
       nt009 ? leaf("cNBS", serv.cNBS) : "",
       leaf("xDescServ", serv.xDescServ),
       nt009 ? "" : leaf("cNBS", serv.cNBS)
-    )
+    ),
+    foreignTrade(serv.comExt)
   ) + group(
     "valores",
     group("vServPrest", leaf("vServ", decimal(valores.vServ))),
@@ -481,7 +532,7 @@ function cityUf(code) {
   return city ? `${city.name} / ${city.uf}` : EMPTY;
 }
 function partyFields(party, withMunicipalRegistration) {
-  const { node, address: address2, nationalAddress } = party;
+  const { node, address: address2, nationalAddress, foreignAddress } = party;
   const cMun = text(nationalAddress, "cMun");
   const cep = text(nationalAddress, "CEP")?.replace(/^(\d{2})(\d{3})(\d{3})$/, "$1.$2-$3");
   const street = [
@@ -498,8 +549,21 @@ function partyFields(party, withMunicipalRegistration) {
     ],
     [
       { label: "Nome / Nome Empresarial", value: or(text(node, "xNome")), col: 0, span: 2 },
-      { label: "Munic\xEDpio / Sigla UF", value: cityUf(cMun), col: 2 },
-      { label: "C\xF3digo IBGE / CEP", value: cMun || cep ? `${or(cMun)} / ${or(cep)}` : EMPTY, col: 3 }
+      ...foreignAddress ? [
+        {
+          label: "Cidade / Estado",
+          value: [text(foreignAddress, "xCidade"), text(foreignAddress, "xEstProvReg")].map(or).join(" / "),
+          col: 2
+        },
+        {
+          label: "Pa\xEDs / C\xF3digo Postal",
+          value: `${or(text(foreignAddress, "cPais"))} / ${or(text(foreignAddress, "cEndPost"))}`,
+          col: 3
+        }
+      ] : [
+        { label: "Munic\xEDpio / Sigla UF", value: cityUf(cMun), col: 2 },
+        { label: "C\xF3digo IBGE / CEP", value: cMun || cep ? `${or(cMun)} / ${or(cep)}` : EMPTY, col: 3 }
+      ]
     ],
     [
       { label: "Endere\xE7o", value: street.length ? street.join(", ") : EMPTY, col: 0, span: 2 },
@@ -556,7 +620,7 @@ function buildDanfseModel(nfseXml) {
   blocks.push(
     toma ? {
       title: "TOMADOR / ADQUIRENTE",
-      rows: partyFields({ node: toma, address: child(toma, "end"), nationalAddress: child(child(toma, "end"), "endNac") }, true),
+      rows: partyFields({ node: toma, address: child(toma, "end"), nationalAddress: child(child(toma, "end"), "endNac"), foreignAddress: child(child(toma, "end"), "endExt") }, true),
       rowHeight: 0.63
     } : { title: "TOMADOR / ADQUIRENTE", message: "TOMADOR/ADQUIRENTE DA OPERA\xC7\xC3O N\xC3O IDENTIFICADO NA NFS-e", rows: [], rowHeight: 0.63 }
   );
@@ -564,7 +628,7 @@ function buildDanfseModel(nfseXml) {
   blocks.push(
     dest ? {
       title: "DESTINAT\xC1RIO DA OPERA\xC7\xC3O",
-      rows: partyFields({ node: dest, address: child(dest, "end"), nationalAddress: child(child(dest, "end"), "endNac") }, false),
+      rows: partyFields({ node: dest, address: child(dest, "end"), nationalAddress: child(child(dest, "end"), "endNac"), foreignAddress: child(child(dest, "end"), "endExt") }, false),
       rowHeight: 0.63
     } : {
       title: "DESTINAT\xC1RIO DA OPERA\xC7\xC3O",
@@ -576,7 +640,7 @@ function buildDanfseModel(nfseXml) {
   blocks.push(
     interm ? {
       title: "INTERMEDI\xC1RIO DA OPERA\xC7\xC3O",
-      rows: partyFields({ node: interm, address: child(interm, "end"), nationalAddress: child(child(interm, "end"), "endNac") }, true),
+      rows: partyFields({ node: interm, address: child(interm, "end"), nationalAddress: child(child(interm, "end"), "endNac"), foreignAddress: child(child(interm, "end"), "endExt") }, true),
       rowHeight: 0.63
     } : { title: "INTERMEDI\xC1RIO DA OPERA\xC7\xC3O", message: "INTERMEDI\xC1RIO DA OPERA\xC7\xC3O N\xC3O IDENTIFICADO NA NFS-e", rows: [], rowHeight: 0.63 }
   );
@@ -933,6 +997,7 @@ function readNfseSummary(nfseXml) {
   const description = infDps?.serv?.cServ?.xDescServ;
   return {
     accessKey: String(inf?.["@_Id"] ?? "").replace(/^NFS/, ""),
+    number: inf?.nNFSe === void 0 ? null : String(inf.nNFSe),
     takerDocument: toma?.CNPJ ?? toma?.CPF ?? null,
     serviceValueCents: Math.round(Number(vServ ?? 0) * 100),
     competenceDate: infDps?.dCompet ?? null,

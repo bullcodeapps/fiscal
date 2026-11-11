@@ -9,15 +9,27 @@ import { E as Environment, C as Certificate } from '../environment-fHjUnJ9t.cjs'
  * Produção runs nfse-esquemas_xsd-v1-01-20260209; produção restrita already
  * runs the NT 009 one (esquemas_prod_restrita_20261020). test/xsd holds both.
  */
-interface Address {
-    /** IBGE municipality code, 7 digits. */
-    cMun: string;
-    CEP: string;
+interface StreetAddress {
     xLgr: string;
     nro: string;
     xCpl?: string;
     xBairro: string;
 }
+interface NationalAddress extends StreetAddress {
+    /** IBGE municipality code, 7 digits. */
+    cMun: string;
+    CEP: string;
+}
+interface ForeignAddress extends StreetAddress {
+    /** ISO 3166-1 alpha-2 country code. */
+    cPais: string;
+    /** Postal code. */
+    cEndPost: string;
+    xCidade: string;
+    /** State, province or region. */
+    xEstProvReg: string;
+}
+type Address = NationalAddress | ForeignAddress;
 interface Provider {
     CNPJ: string;
     IM?: string;
@@ -29,26 +41,66 @@ interface Provider {
         regEspTrib: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9;
     };
 }
-type Taker = ({
+interface TakerBase {
+    xNome: string;
+    fone?: string;
+    email?: string;
+}
+type NationalTaker = TakerBase & ({
     CNPJ: string;
 } | {
     CPF: string;
 }) & {
-    xNome: string;
     /** Mandatory whenever the DPS declares IBS/CBS (E0239). */
     end?: Address;
-    fone?: string;
-    email?: string;
 };
+/** A taker abroad. Sefin requires its foreign address (E0223). */
+type ForeignTaker = TakerBase & (
+/** Tax ID issued abroad. */
+{
+    NIF: string;
+}
+/** Reason for not informing the NIF: 0 not informed, 1 exempt, 2 not required. */
+ | {
+    cNaoNIF: 0 | 1 | 2;
+}) & {
+    end: ForeignAddress;
+};
+type Taker = NationalTaker | ForeignTaker;
+/** Comércio exterior group (export of services). Codes follow tiposSimples_v1.01.xsd. */
+interface ForeignTrade {
+    /** 0 Desconhecido, 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas. */
+    mdPrestacao: 0 | 1 | 2 | 3 | 4;
+    /** 0 Sem vínculo, 1 Controlada, 2 Controladora, 3 Coligada, 4 Matriz, 5 Filial, 6 Outro, 9 Desconhecido. */
+    vincPrest: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9;
+    /** BACEN currency code, 3 digits (e.g. "220" for USD). */
+    tpMoeda: string;
+    /** Service value in `tpMoeda`. */
+    vServMoeda: number;
+    /** Provider's foreign trade support mechanism, 2 digits ("01" none). */
+    mecAFComexP: string;
+    /** Taker's foreign trade support mechanism, 2 digits ("01" none). */
+    mecAFComexT: string;
+    /** 0 Desconhecido, 1 Não, 2 Vinculada a DI, 3 Vinculada a DE. */
+    movTempBens: 0 | 1 | 2 | 3;
+    nDI?: string;
+    nRE?: string;
+    /** 0 Não enviar, 1 Enviar ao MDIC. */
+    mdic: 0 | 1;
+}
 interface Service {
     /** IBGE code of the municipality where the service is provided. */
-    cLocPrestacao: string;
+    cLocPrestacao?: string;
+    /** ISO country code where the service is provided. Exactly one of cLocPrestacao / cPaisPrestacao. */
+    cPaisPrestacao?: string;
     /** Código de Tributação Nacional, 6 digits without dots (e.g. "170303"). */
     cTribNac: string;
     cTribMun?: string;
     /** Mandatory whenever the DPS declares IBS/CBS (E0322). 9 digits, no dots. */
     cNBS?: string;
     xDescServ: string;
+    /** Present when the taker is abroad (export of services). */
+    comExt?: ForeignTrade;
 }
 interface MovableGood {
     /** NCM, 8 digits. */
@@ -232,6 +284,8 @@ declare function buildCancellation(input: CancellationInput, certificate: Pick<C
 
 interface NfseSummary {
     accessKey: string;
+    /** nNFSe, the number the municipality shows on the note. */
+    number: string | null;
     /** CNPJ or CPF digits of the taker; null when the note has none. */
     takerDocument: string | null;
     /** vServ in cents. */
@@ -244,4 +298,4 @@ interface NfseSummary {
 /** What a caller needs to confirm an existing NFS-e is the one it meant to issue. */
 declare function readNfseSummary(nfseXml: string): NfseSummary;
 
-export { type Address, type BuiltDps, type CancellationInput, type CancellationReason, type DanfseModel, type DpsInput, type DpsKey, Environment, type IbsCbs, type IssuedNfse, type MovableGood, type NfseSummary, type Provider, SefinClient, type SefinClientOptions, SefinError, type SefinMessage, type Service, type Taker, type TotTrib, type Values, buildCancellation, buildDanfseModel, buildDps, dpsId, readNfseSummary, renderDanfse, signDps };
+export { type Address, type BuiltDps, type CancellationInput, type CancellationReason, type DanfseModel, type DpsInput, type DpsKey, Environment, type ForeignAddress, type ForeignTrade, type IbsCbs, type IssuedNfse, type MovableGood, type NationalAddress, type NfseSummary, type Provider, SefinClient, type SefinClientOptions, SefinError, type SefinMessage, type Service, type Taker, type TotTrib, type Values, buildCancellation, buildDanfseModel, buildDps, dpsId, readNfseSummary, renderDanfse, signDps };
