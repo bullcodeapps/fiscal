@@ -41,25 +41,32 @@ interface Provider {
         regEspTrib: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9;
     };
 }
-type Taker = ({
+interface TakerBase {
+    xNome: string;
+    fone?: string;
+    email?: string;
+}
+type NationalTaker = TakerBase & ({
     CNPJ: string;
 } | {
     CPF: string;
-}
+}) & {
+    /** Mandatory whenever the DPS declares IBS/CBS (E0239). */
+    end?: Address;
+};
+/** A taker abroad. Sefin requires its foreign address (E0223). */
+type ForeignTaker = TakerBase & (
 /** Tax ID issued abroad. */
- | {
+{
     NIF: string;
 }
 /** Reason for not informing the NIF: 0 not informed, 1 exempt, 2 not required. */
  | {
     cNaoNIF: 0 | 1 | 2;
 }) & {
-    xNome: string;
-    /** Mandatory whenever the DPS declares IBS/CBS (E0239). */
-    end?: Address;
-    fone?: string;
-    email?: string;
+    end: ForeignAddress;
 };
+type Taker = NationalTaker | ForeignTaker;
 /** Comércio exterior group (export of services). Codes follow tiposSimples_v1.01.xsd. */
 interface ForeignTrade {
     /** 0 Desconhecido, 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas. */

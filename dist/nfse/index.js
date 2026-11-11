@@ -116,7 +116,25 @@ function ibsCbs(value, nt009) {
     )
   );
 }
+function assertExportRules(input) {
+  const { toma, serv, valores } = input;
+  const foreignId = toma !== void 0 && ("NIF" in toma || "cNaoNIF" in toma);
+  const foreignAddress = toma?.end !== void 0 && "cPais" in toma.end;
+  if (foreignId && !foreignAddress) {
+    throw new Error("toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)");
+  }
+  if (foreignAddress && !foreignId) {
+    throw new Error("toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF");
+  }
+  if (valores.tribISSQN === 3 && !serv.comExt) {
+    throw new Error("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
+  }
+  if (serv.comExt && toma && !foreignId) {
+    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF");
+  }
+}
 function buildDps(input) {
+  assertExportRules(input);
   const id = dpsId({
     cLocEmi: input.cLocEmi,
     CNPJ: input.prest.CNPJ,
@@ -451,8 +469,8 @@ function partyFields(party, withMunicipalRegistration) {
       { label: "Nome / Nome Empresarial", value: or(text(node, "xNome")), col: 0, span: 2 },
       ...foreignAddress ? [
         {
-          label: "Cidade / Estado / Pa\xEDs",
-          value: [text(foreignAddress, "xCidade"), text(foreignAddress, "xEstProvReg"), text(foreignAddress, "cPais")].map(or).join(" / "),
+          label: "Cidade / Estado",
+          value: [text(foreignAddress, "xCidade"), text(foreignAddress, "xEstProvReg")].map(or).join(" / "),
           col: 2
         },
         {
