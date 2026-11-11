@@ -104,6 +104,21 @@ describe("buildDanfseModel", () => {
     });
   });
 
+  it("shows the NIF and the foreign city and country for an export note", () => {
+    const foreignTaker =
+      "<toma><NIF>98-7654321</NIF><xNome>ACME INC</xNome><end><endExt><cPais>US</cPais><cEndPost>94105</cEndPost>" +
+      "<xCidade>San Francisco</xCidade><xEstProvReg>CA</xEstProvReg></endExt>" +
+      "<xLgr>Market St</xLgr><nro>1</nro><xBairro>SoMa</xBairro></end></toma>";
+    const xml = fixture("nfse-170303").replace(/<toma>.*<\/toma>/, foreignTaker);
+
+    expect(fieldValues(buildDanfseModel(xml), "TOMADOR / ADQUIRENTE")).toMatchObject({
+      "CNPJ / CPF / NIF": "98-7654321",
+      "Cidade / Estado / País": "San Francisco / CA / US",
+      "País / Código Postal": "US / 94105",
+      Endereço: "Market St, 1, SoMa",
+    });
+  });
+
   it.each([
     { dCompet: "2026-12-31", rows: 2 },
     { dCompet: "2027-01-05", rows: 1 },

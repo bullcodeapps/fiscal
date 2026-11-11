@@ -76,6 +76,48 @@ describe("buildDps", () => {
   });
 });
 
+describe("export of services", () => {
+  const exported: DpsInput = {
+    ...accepted,
+    toma: { NIF: "98-7654321", xNome: "ACME INC" },
+    serv: {
+      ...accepted.serv,
+      comExt: {
+        mdPrestacao: 1,
+        vincPrest: 0,
+        tpMoeda: "220",
+        vServMoeda: 2000,
+        mecAFComexP: "01",
+        mecAFComexT: "01",
+        movTempBens: 1,
+        mdic: 0,
+      },
+    },
+  };
+
+  it("places comExt after cServ and before valores", () => {
+    const { xml } = buildDps(exported);
+    const at = (tag: string) => xml.indexOf(`<${tag}>`);
+
+    expect(at("cServ")).toBeGreaterThan(-1);
+    expect(at("comExt")).toBeGreaterThan(xml.indexOf("</cServ>"));
+    expect(at("comExt")).toBeLessThan(at("valores"));
+    expect(xml).toContain("<vServMoeda>2000.00</vServMoeda>");
+  });
+
+  it("rejects a service with both cLocPrestacao and cPaisPrestacao", () => {
+    expect(() =>
+      buildDps({ ...exported, serv: { ...exported.serv, cPaisPrestacao: "US" } }),
+    ).toThrow("serv: exactly one of cLocPrestacao or cPaisPrestacao");
+  });
+
+  it("rejects a service with neither cLocPrestacao nor cPaisPrestacao", () => {
+    expect(() =>
+      buildDps({ ...exported, serv: { ...exported.serv, cLocPrestacao: undefined } }),
+    ).toThrow("serv: exactly one of cLocPrestacao or cPaisPrestacao");
+  });
+});
+
 describe("signDps", () => {
   it("signs infDPS so that any change to the declared values breaks the signature", () => {
     const certificate = loadCertificate(

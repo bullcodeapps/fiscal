@@ -52,10 +52,60 @@ const consumerDps = (environment: Environment): DpsInput => ({
   IBSCBS: { indFinal: 1, cIndOp: "100301", indDest: 0, CST: "000", cClassTrib: "000001" },
 });
 
+const exportDps = (environment: Environment, toma: DpsInput["toma"]): DpsInput => ({
+  ...consumerDps(environment),
+  toma,
+  serv: {
+    cLocPrestacao: "4208302",
+    cTribNac: "060201",
+    cNBS: "126029000",
+    xDescServ: "Software development services",
+    comExt: {
+      mdPrestacao: 1,
+      vincPrest: 0,
+      tpMoeda: "220",
+      vServMoeda: 2000,
+      mecAFComexP: "01",
+      mecAFComexT: "01",
+      movTempBens: 1,
+      mdic: 0,
+    },
+  },
+  valores: { vServ: 10000, tribISSQN: 3, tpRetISSQN: 1, totTrib: { pTotTribSN: 6 } },
+});
+
 describe("Sefin schemas", () => {
   it.each<Environment>(["production", "restricted"])("a consumer DPS matches the %s schema", async (environment) => {
     expect(await validate(environment, "DPS_v1.01.xsd", buildDps(consumerDps(environment)).xml)).toEqual([]);
   });
+
+  it.each<Environment>(["production", "restricted"])(
+    "an export DPS to a foreign taker with NIF matches the %s schema",
+    async (environment) => {
+      const dps = exportDps(environment, {
+        NIF: "98-7654321",
+        xNome: "ACME INC",
+        end: {
+          cPais: "US",
+          cEndPost: "94105",
+          xCidade: "San Francisco",
+          xEstProvReg: "CA",
+          xLgr: "Market St",
+          nro: "1",
+          xBairro: "SoMa",
+        },
+      });
+      expect(await validate(environment, "DPS_v1.01.xsd", buildDps(dps).xml)).toEqual([]);
+    },
+  );
+
+  it.each<Environment>(["production", "restricted"])(
+    "an export DPS to a foreign taker without NIF matches the %s schema",
+    async (environment) => {
+      const dps = exportDps(environment, { cNaoNIF: 2, xNome: "ACME INC" });
+      expect(await validate(environment, "DPS_v1.01.xsd", buildDps(dps).xml)).toEqual([]);
+    },
+  );
 
   it.each<Environment>(["production", "restricted"])("a cancellation matches the %s schema", async (environment) => {
     const certificate = loadCertificate(makePfx({ password: "x", cnpj: "64643544000154" }), "x");
