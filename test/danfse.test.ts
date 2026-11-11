@@ -142,10 +142,11 @@ describe("renderDanfse", () => {
 });
 
 describe("readNfseSummary", () => {
-  it("reads what an adoption check compares (key, taker, value, competence, description)", async () => {
+  it("reads what an adoption check compares (key, number, taker, value, competence, description)", async () => {
     const { readNfseSummary } = await import("../src/nfse");
     expect(readNfseSummary(fixture("nfse-990401"))).toEqual({
       accessKey: "42082032211222333000181000000000000226100953785610",
+      number: "2",
       takerDocument: "00000000000191",
       serviceValueCents: 1000,
       competenceDate: "2026-10-26",
