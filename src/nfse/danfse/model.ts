@@ -172,8 +172,8 @@ function partyFields(party: Party, withMunicipalRegistration: boolean): DanfseFi
       ...(foreignAddress
         ? [
             {
-              label: "Cidade / Estado / País",
-              value: [text(foreignAddress, "xCidade"), text(foreignAddress, "xEstProvReg"), text(foreignAddress, "cPais")]
+              label: "Cidade / Estado",
+              value: [text(foreignAddress, "xCidade"), text(foreignAddress, "xEstProvReg")]
                 .map(or)
                 .join(" / "),
               col: 2 as const,

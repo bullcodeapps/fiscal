@@ -104,7 +104,7 @@ describe("buildDanfseModel", () => {
     });
   });
 
-  it("shows the NIF and the foreign city and country for an export note", () => {
+  it("shows the NIF and the foreign city and country once for an export note", () => {
     const foreignTaker =
       "<toma><NIF>98-7654321</NIF><xNome>ACME INC</xNome><end><endExt><cPais>US</cPais><cEndPost>94105</cEndPost>" +
       "<xCidade>San Francisco</xCidade><xEstProvReg>CA</xEstProvReg></endExt>" +
@@ -113,7 +113,7 @@ describe("buildDanfseModel", () => {
 
     expect(fieldValues(buildDanfseModel(xml), "TOMADOR / ADQUIRENTE")).toMatchObject({
       "CNPJ / CPF / NIF": "98-7654321",
-      "Cidade / Estado / País": "San Francisco / CA / US",
+      "Cidade / Estado": "San Francisco / CA",
       "País / Código Postal": "US / 94105",
       Endereço: "Market St, 1, SoMa",
     });

@@ -64,6 +64,7 @@ try {
   const xml = await client.getNfseXml(issued.accessKey);
   console.log("getNfseXml", xml.includes(issued.accessKey) ? "ok" : "MISMATCH");
 } catch (error) {
-  if (error instanceof SefinError) console.log("SefinError", error.kind, error.httpStatus, error.messages);
-  else throw error;
+  if (!(error instanceof SefinError)) throw error;
+  console.error("SefinError", error.kind, error.httpStatus, error.messages);
+  process.exitCode = 1;
 }
