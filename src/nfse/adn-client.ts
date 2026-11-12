@@ -30,7 +30,7 @@ export class AdnError extends Error {
     super(
       messages.length
         ? messages.map((m) => `${m.code}: ${m.description}`).join("; ")
-        : `ADN indisponível${httpStatus ? ` (HTTP ${httpStatus})` : ""}`,
+        : `${kind === "rejected" ? "ADN recusou a consulta" : "ADN indisponível"}${httpStatus ? ` (HTTP ${httpStatus})` : ""}`,
     );
   }
 }
@@ -84,6 +84,8 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
 
 export interface AdnClientOptions {
   environment: Environment;
+  /** CNPJ whose documents are queried (digits); the certificate must belong to its root. */
+  cnpj: string;
   certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">;
   timeoutMs?: number;
 }
@@ -91,11 +93,13 @@ export interface AdnClientOptions {
 /** Distribution of the documents where the certificate's CNPJ is provider, taker or intermediary. */
 export class AdnClient {
   private readonly baseUrl: string;
+  private readonly cnpj: string;
   private readonly agent: https.Agent;
   private readonly timeoutMs: number;
 
   constructor(options: AdnClientOptions) {
     this.baseUrl = BASE_URLS[options.environment];
+    this.cnpj = options.cnpj.replace(/\D/g, "");
     this.agent = mtlsAgent(options.certificate);
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }
@@ -107,7 +111,9 @@ export class AdnClient {
   async fetchDocuments(lastNsu: number): Promise<AdnDocument[]> {
     let response: RawResponse;
     try {
-      response = await request(this.agent, `${this.baseUrl}/DFe/${lastNsu}?lote=true`, "GET", this.timeoutMs);
+      // Since 2026-11-03 the ADN refuses a query without cnpjConsulta (HTTP 400, REJEICAO with no Erros).
+      const query = new URLSearchParams({ cnpjConsulta: this.cnpj, lote: "true" });
+      response = await request(this.agent, `${this.baseUrl}/DFe/${lastNsu}?${query}`, "GET", this.timeoutMs);
     } catch {
       throw new AdnError("unavailable", []);
     }
