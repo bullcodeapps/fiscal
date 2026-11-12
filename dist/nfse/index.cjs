@@ -1050,7 +1050,7 @@ var BASE_URLS2 = {
 var AdnError = class extends Error {
   constructor(kind, messages, httpStatus) {
     super(
-      messages.length ? messages.map((m) => `${m.code}: ${m.description}`).join("; ") : `ADN indispon\xEDvel${httpStatus ? ` (HTTP ${httpStatus})` : ""}`
+      messages.length ? messages.map((m) => `${m.code}: ${m.description}`).join("; ") : `${kind === "rejected" ? "ADN recusou a consulta" : "ADN indispon\xEDvel"}${httpStatus ? ` (HTTP ${httpStatus})` : ""}`
     );
     this.kind = kind;
     this.messages = messages;
@@ -1096,10 +1096,12 @@ function interpretDistribution(response) {
 }
 var AdnClient = class {
   baseUrl;
+  cnpj;
   agent;
   timeoutMs;
   constructor(options) {
     this.baseUrl = BASE_URLS2[options.environment];
+    this.cnpj = options.cnpj.replace(/\D/g, "");
     this.agent = mtlsAgent(options.certificate);
     this.timeoutMs = options.timeoutMs ?? 3e4;
   }
@@ -1110,7 +1112,8 @@ var AdnClient = class {
   async fetchDocuments(lastNsu) {
     let response;
     try {
-      response = await request(this.agent, `${this.baseUrl}/DFe/${lastNsu}?lote=true`, "GET", this.timeoutMs);
+      const query = new URLSearchParams({ cnpjConsulta: this.cnpj, lote: "true" });
+      response = await request(this.agent, `${this.baseUrl}/DFe/${lastNsu}?${query}`, "GET", this.timeoutMs);
     } catch {
       throw new AdnError("unavailable", []);
     }

@@ -343,12 +343,15 @@ interface AdnDocument {
 }
 interface AdnClientOptions {
     environment: Environment;
+    /** CNPJ whose documents are queried (digits); the certificate must belong to its root. */
+    cnpj: string;
     certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">;
     timeoutMs?: number;
 }
 /** Distribution of the documents where the certificate's CNPJ is provider, taker or intermediary. */
 declare class AdnClient {
     private readonly baseUrl;
+    private readonly cnpj;
     private readonly agent;
     private readonly timeoutMs;
     constructor(options: AdnClientOptions);
