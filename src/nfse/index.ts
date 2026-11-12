@@ -28,4 +28,5 @@ export {
 export { renderDanfse } from "./danfse/render";
 export { buildDanfseModel, type DanfseModel } from "./danfse/model";
 export { buildCancellation, type CancellationInput, type CancellationReason } from "./events";
-export { readNfseSummary, type NfseSummary } from "./summary";
+export { readNfseEventSummary, readNfseSummary, type NfseEventSummary, type NfseSummary } from "./summary";
+export { AdnClient, AdnError, type AdnClientOptions, type AdnDocument, type AdnMessage } from "./adn-client";

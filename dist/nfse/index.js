@@ -191,8 +191,41 @@ function signDps(dpsXml, certificate) {
 }
 
 // src/nfse/sefin-client.ts
-import https from "https";
 import { gunzipSync, gzipSync } from "zlib";
+
+// src/nfse/http.ts
+import https from "https";
+function mtlsAgent(certificate) {
+  return new https.Agent({ key: certificate.privateKeyPem, cert: certificate.certificatePem });
+}
+function request(agent, url, method, timeoutMs, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      url,
+      {
+        method,
+        agent,
+        timeout: timeoutMs,
+        headers: {
+          Accept: "application/json",
+          ...body ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } : {}
+        }
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }));
+        res.on("error", reject);
+      }
+    );
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+// src/nfse/sefin-client.ts
 var BASE_URLS = {
   production: "https://sefin.nfse.gov.br/SefinNacional",
   restricted: "https://sefin.producaorestrita.nfse.gov.br/SefinNacional"
@@ -270,10 +303,7 @@ var SefinClient = class {
   timeoutMs;
   constructor(options) {
     this.baseUrl = BASE_URLS[options.environment];
-    this.agent = new https.Agent({
-      key: options.certificate.privateKeyPem,
-      cert: options.certificate.certificatePem
-    });
+    this.agent = mtlsAgent(options.certificate);
     this.timeoutMs = options.timeoutMs ?? 3e4;
   }
   /** Sends a signed DPS. Authorization is synchronous. */
@@ -319,34 +349,12 @@ var SefinClient = class {
       response.status
     );
   }
-  request(method, path, body) {
-    return new Promise((resolve, reject) => {
-      const req = https.request(
-        `${this.baseUrl}${path}`,
-        {
-          method,
-          agent: this.agent,
-          timeout: this.timeoutMs,
-          headers: {
-            Accept: "application/json",
-            ...body ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } : {}
-          }
-        },
-        (res) => {
-          const chunks = [];
-          res.on("data", (chunk) => chunks.push(chunk));
-          res.on(
-            "end",
-            () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") })
-          );
-          res.on("error", () => reject(new SefinError("unavailable", [])));
-        }
-      );
-      req.on("timeout", () => req.destroy(new Error("timeout")));
-      req.on("error", () => reject(new SefinError("unavailable", [])));
-      if (body) req.write(body);
-      req.end();
-    });
+  async request(method, path, body) {
+    try {
+      return await request(this.agent, `${this.baseUrl}${path}`, method, this.timeoutMs, body);
+    } catch {
+      throw new SefinError("unavailable", []);
+    }
   }
 };
 
@@ -913,22 +921,127 @@ function readNfseSummary(nfseXml) {
   const toma = infDps?.toma;
   const vServ = infDps?.valores?.vServPrest?.vServ;
   const description = infDps?.serv?.cServ?.xDescServ;
+  const text2 = (value) => value === void 0 || value === null ? null : String(value);
   return {
     accessKey: String(inf?.["@_Id"] ?? "").replace(/^NFS/, ""),
     number: inf?.nNFSe === void 0 ? null : String(inf.nNFSe),
     takerDocument: toma?.CNPJ ?? toma?.CPF ?? null,
     serviceValueCents: Math.round(Number(vServ ?? 0) * 100),
     competenceDate: infDps?.dCompet ?? null,
-    description: description === void 0 ? null : String(description)
+    description: description === void 0 ? null : String(description),
+    providerDocument: text2(inf?.emit?.CNPJ ?? inf?.emit?.CPF),
+    takerName: text2(toma?.xNome),
+    takerNif: text2(toma?.NIF),
+    issuedAt: text2(infDps?.dhEmi),
+    issqnCents: Math.round(Number(inf?.valores?.vISSQN ?? 0) * 100),
+    issqnInSimples: String(infDps?.prest?.regTrib?.regApTribSN ?? "") === "1"
   };
 }
+function readNfseEventSummary(eventXml) {
+  const infPedReg = findKey(parser2.parse(eventXml), "infPedReg");
+  const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
+  return {
+    accessKey: String(infPedReg?.chNFSe ?? ""),
+    code: codeKey ? codeKey.slice(1) : null
+  };
+}
+function findKey(node, key) {
+  if (!node || typeof node !== "object") return void 0;
+  const record = node;
+  if (key in record) return record[key];
+  for (const child2 of Object.values(record)) {
+    const found = findKey(child2, key);
+    if (found !== void 0) return found;
+  }
+  return void 0;
+}
+
+// src/nfse/adn-client.ts
+import { gunzipSync as gunzipSync2 } from "zlib";
+var BASE_URLS2 = {
+  production: "https://adn.nfse.gov.br/contribuintes",
+  restricted: "https://adn.producaorestrita.nfse.gov.br/contribuintes"
+};
+var AdnError = class extends Error {
+  constructor(kind, messages, httpStatus) {
+    super(
+      messages.length ? messages.map((m) => `${m.code}: ${m.description}`).join("; ") : `ADN indispon\xEDvel${httpStatus ? ` (HTTP ${httpStatus})` : ""}`
+    );
+    this.kind = kind;
+    this.messages = messages;
+    this.httpStatus = httpStatus;
+  }
+  kind;
+  messages;
+  httpStatus;
+  name = "AdnError";
+};
+function parseJson2(body) {
+  try {
+    const value = JSON.parse(body);
+    return value && typeof value === "object" ? value : null;
+  } catch {
+    return null;
+  }
+}
+function toMessages2(raw) {
+  const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
+  return list.map((m) => ({
+    code: String(m.Codigo ?? m.codigo ?? ""),
+    description: String(m.Descricao ?? m.descricao ?? "")
+  }));
+}
+function interpretDistribution(response) {
+  if (response.status === 429) throw new AdnError("rate_limited", [], 429);
+  const json = parseJson2(response.body);
+  const status = json?.StatusProcessamento;
+  if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
+  if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
+    const batch = Array.isArray(json?.LoteDFe) ? json.LoteDFe : [];
+    return batch.map((doc) => ({
+      nsu: Number(doc.NSU),
+      accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
+      type: String(doc.TipoDocumento ?? ""),
+      xml: gunzipSync2(Buffer.from(String(doc.ArquivoXml ?? ""), "base64")).toString("utf8")
+    }));
+  }
+  const messages = toMessages2(json?.Erros);
+  if (status === "REJEICAO") throw new AdnError("rejected", messages, response.status);
+  throw new AdnError("unavailable", messages, response.status);
+}
+var AdnClient = class {
+  baseUrl;
+  agent;
+  timeoutMs;
+  constructor(options) {
+    this.baseUrl = BASE_URLS2[options.environment];
+    this.agent = mtlsAgent(options.certificate);
+    this.timeoutMs = options.timeoutMs ?? 3e4;
+  }
+  /**
+   * The next page (up to 50) of documents with an NSU above `lastNsu`, in NSU order. Start with 0 and
+   * call again with the highest NSU received until a call returns nothing.
+   */
+  async fetchDocuments(lastNsu) {
+    let response;
+    try {
+      response = await request(this.agent, `${this.baseUrl}/DFe/${lastNsu}?lote=true`, "GET", this.timeoutMs);
+    } catch {
+      throw new AdnError("unavailable", []);
+    }
+    return interpretDistribution(response).filter((doc) => doc.nsu > lastNsu);
+  }
+};
 export {
+  AdnClient,
+  AdnError,
   SefinClient,
   SefinError,
   buildCancellation,
   buildDanfseModel,
   buildDps,
   dpsId,
+  readNfseEventSummary,
   readNfseSummary,
   renderDanfse,
   signDps
