@@ -294,8 +294,69 @@ interface NfseSummary {
     competenceDate: string | null;
     /** xDescServ. */
     description: string | null;
+    /** CNPJ or CPF digits of the provider (emit). */
+    providerDocument: string | null;
+    /** xNome of the taker. */
+    takerName: string | null;
+    /** NIF of a foreign taker. */
+    takerNif: string | null;
+    /** dhEmi of the DPS, as written (with offset). */
+    issuedAt: string | null;
+    /** vISSQN in cents; 0 when the note has none. */
+    issqnCents: number;
+    /** regApTribSN = 1: the ISSQN is paid inside the Simples Nacional DAS, not on its own. */
+    issqnInSimples: boolean;
+}
+interface NfseEventSummary {
+    /** chNFSe the event refers to. */
+    accessKey: string;
+    /** Event code without the "e" (101101 is cancellation). */
+    code: string | null;
 }
 /** What a caller needs to confirm an existing NFS-e is the one it meant to issue. */
 declare function readNfseSummary(nfseXml: string): NfseSummary;
+/** Reads an event XML distributed by the ADN (the registered event wraps the original request). */
+declare function readNfseEventSummary(eventXml: string): NfseEventSummary;
 
-export { type Address, type BuiltDps, type CancellationInput, type CancellationReason, type DanfseModel, type DpsInput, type DpsKey, Environment, type ForeignAddress, type ForeignTrade, type IbsCbs, type IssuedNfse, type MovableGood, type NationalAddress, type NfseSummary, type Provider, SefinClient, type SefinClientOptions, SefinError, type SefinMessage, type Service, type Taker, type TotTrib, type Values, buildCancellation, buildDanfseModel, buildDps, dpsId, readNfseSummary, renderDanfse, signDps };
+interface AdnMessage {
+    code: string;
+    description: string;
+}
+/**
+ * - `rejected`: the ADN refused the query (e.g. certificate not allowed).
+ * - `rate_limited`: HTTP 429; wait before the next call.
+ * - `unavailable`: no definitive answer (timeout, 5xx, network, unknown body).
+ */
+declare class AdnError extends Error {
+    readonly kind: "rejected" | "rate_limited" | "unavailable";
+    readonly messages: AdnMessage[];
+    readonly httpStatus?: number | undefined;
+    readonly name = "AdnError";
+    constructor(kind: "rejected" | "rate_limited" | "unavailable", messages: AdnMessage[], httpStatus?: number | undefined);
+}
+interface AdnDocument {
+    nsu: number;
+    accessKey: string | null;
+    /** "NFSE" for a note; other values (events) carry their own XML. */
+    type: string;
+    xml: string;
+}
+interface AdnClientOptions {
+    environment: Environment;
+    certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">;
+    timeoutMs?: number;
+}
+/** Distribution of the documents where the certificate's CNPJ is provider, taker or intermediary. */
+declare class AdnClient {
+    private readonly baseUrl;
+    private readonly agent;
+    private readonly timeoutMs;
+    constructor(options: AdnClientOptions);
+    /**
+     * The next page (up to 50) of documents with an NSU above `lastNsu`, in NSU order. Start with 0 and
+     * call again with the highest NSU received until a call returns nothing.
+     */
+    fetchDocuments(lastNsu: number): Promise<AdnDocument[]>;
+}
+
+export { type Address, AdnClient, type AdnClientOptions, type AdnDocument, AdnError, type AdnMessage, type BuiltDps, type CancellationInput, type CancellationReason, type DanfseModel, type DpsInput, type DpsKey, Environment, type ForeignAddress, type ForeignTrade, type IbsCbs, type IssuedNfse, type MovableGood, type NationalAddress, type NfseEventSummary, type NfseSummary, type Provider, SefinClient, type SefinClientOptions, SefinError, type SefinMessage, type Service, type Taker, type TotTrib, type Values, buildCancellation, buildDanfseModel, buildDps, dpsId, readNfseEventSummary, readNfseSummary, renderDanfse, signDps };
