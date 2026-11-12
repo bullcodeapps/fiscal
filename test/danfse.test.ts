@@ -142,7 +142,7 @@ describe("renderDanfse", () => {
 });
 
 describe("readNfseSummary", () => {
-  it("reads what an adoption check compares (key, number, taker, value, competence, description)", async () => {
+  it("reads what an adoption check and the ADN import use from the note", async () => {
     const { readNfseSummary } = await import("../src/nfse");
     expect(readNfseSummary(fixture("nfse-990401"))).toEqual({
       accessKey: "42082032264643544000154000000000000226100953785610",
@@ -151,6 +151,30 @@ describe("readNfseSummary", () => {
       serviceValueCents: 1000,
       competenceDate: "2026-10-26",
       description: "TESTE HOMOLOGACAO NT009 d",
+      providerDocument: "64643544000154",
+      takerName: "BANCO DO BRASIL SA",
+      takerNif: null,
+      issuedAt: "2026-10-26T16:21:03-03:00",
+      issqnCents: 0,
+      issqnInSimples: true,
+    });
+  });
+});
+
+describe("readNfseEventSummary", () => {
+  it("reads the note and the event code from a distributed cancellation", async () => {
+    const { readNfseEventSummary } = await import("../src/nfse");
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8"?><evento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">' +
+      '<infEvento Id="EVT42082032264643544000154000000000000226100953785610101101001"><nSeqEvento>1</nSeqEvento>' +
+      '<pedRegEvento versao="1.01"><infPedReg Id="PRE42082032264643544000154000000000000226100953785610101101">' +
+      "<tpAmb>2</tpAmb><verAplic>x</verAplic><dhEvento>2026-10-27T10:00:00-03:00</dhEvento><CNPJAutor>64643544000154</CNPJAutor>" +
+      "<chNFSe>42082032264643544000154000000000000226100953785610</chNFSe><nPedRegEvento>001</nPedRegEvento>" +
+      "<e101101><xDesc>Cancelamento de NFS-e</xDesc><cMotivo>1</cMotivo><xMotivo>Erro na emissao</xMotivo></e101101>" +
+      "</infPedReg></pedRegEvento></infEvento></evento>";
+    expect(readNfseEventSummary(xml)).toEqual({
+      accessKey: "42082032264643544000154000000000000226100953785610",
+      code: "101101",
     });
   });
 });

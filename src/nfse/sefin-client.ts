@@ -1,7 +1,8 @@
-import https from "node:https";
+import type https from "node:https";
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
+import { mtlsAgent, request, type RawResponse } from "./http";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://sefin.nfse.gov.br/SefinNacional",
@@ -41,11 +42,6 @@ export interface IssuedNfse {
   nfseXml: string;
   dpsId: string;
   alerts: SefinMessage[];
-}
-
-interface RawResponse {
-  status: number;
-  body: string;
 }
 
 // Emission answers `erros: [{ Codigo, ... }]`; the event endpoint answers
@@ -127,10 +123,7 @@ export class SefinClient {
 
   constructor(options: SefinClientOptions) {
     this.baseUrl = BASE_URLS[options.environment];
-    this.agent = new https.Agent({
-      key: options.certificate.privateKeyPem,
-      cert: options.certificate.certificatePem,
-    });
+    this.agent = mtlsAgent(options.certificate);
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }
 
@@ -181,34 +174,11 @@ export class SefinClient {
     );
   }
 
-  private request(method: "GET" | "POST", path: string, body?: string): Promise<RawResponse> {
-    return new Promise((resolve, reject) => {
-      const req = https.request(
-        `${this.baseUrl}${path}`,
-        {
-          method,
-          agent: this.agent,
-          timeout: this.timeoutMs,
-          headers: {
-            Accept: "application/json",
-            ...(body
-              ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) }
-              : {}),
-          },
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (chunk: Buffer) => chunks.push(chunk));
-          res.on("end", () =>
-            resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }),
-          );
-          res.on("error", () => reject(new SefinError("unavailable", [])));
-        },
-      );
-      req.on("timeout", () => req.destroy(new Error("timeout")));
-      req.on("error", () => reject(new SefinError("unavailable", [])));
-      if (body) req.write(body);
-      req.end();
-    });
+  private async request(method: "GET" | "POST", path: string, body?: string): Promise<RawResponse> {
+    try {
+      return await request(this.agent, `${this.baseUrl}${path}`, method, this.timeoutMs, body);
+    } catch {
+      throw new SefinError("unavailable", []);
+    }
   }
 }
