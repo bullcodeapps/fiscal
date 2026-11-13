@@ -1,8 +1,7 @@
 import type https from "node:https";
-import { gunzipSync } from "node:zlib";
 import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
-import { mtlsAgent, request, type RawResponse } from "./http";
+import { gunzipBase64, mtlsAgent, request, type RawResponse } from "./http";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://adn.nfse.gov.br/contribuintes",
@@ -70,12 +69,16 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
   if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     const batch = Array.isArray(json?.LoteDFe) ? (json.LoteDFe as Record<string, unknown>[]) : [];
-    return batch.map((doc) => ({
-      nsu: Number(doc.NSU),
-      accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
-      type: String(doc.TipoDocumento ?? ""),
-      xml: gunzipSync(Buffer.from(String(doc.ArquivoXml ?? ""), "base64")).toString("utf8"),
-    }));
+    try {
+      return batch.map((doc) => ({
+        nsu: Number(doc.NSU),
+        accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
+        type: String(doc.TipoDocumento ?? ""),
+        xml: gunzipBase64(String(doc.ArquivoXml ?? "")),
+      }));
+    } catch {
+      throw new AdnError("unavailable", [], response.status);
+    }
   }
   const messages = toMessages(json?.Erros);
   if (status === "REJEICAO") throw new AdnError("rejected", messages, response.status);
@@ -99,7 +102,7 @@ export class AdnClient {
 
   constructor(options: AdnClientOptions) {
     this.baseUrl = BASE_URLS[options.environment];
-    this.cnpj = options.cnpj.replace(/\D/g, "");
+    this.cnpj = options.cnpj.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
     this.agent = mtlsAgent(options.certificate);
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }

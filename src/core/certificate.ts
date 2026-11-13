@@ -23,7 +23,7 @@ export class CertificateError extends Error {
 
 /** An opened A1 e-CNPJ. Holds the private key: keep it in memory only, never log or persist it. */
 export interface Certificate {
-  /** The holder's CNPJ, 14 digits. Use it as `prest.CNPJ` and `authorCnpj`. */
+  /** The holder's CNPJ: 14 digits, or digits and uppercase letters. Use it as `prest.CNPJ` and `authorCnpj`. */
   cnpj: string;
   /** Subject CN, usually "RAZAO SOCIAL:CNPJ". */
   subjectName: string;
@@ -55,8 +55,8 @@ function extractCnpj(certificate: forge.pki.Certificate): string | null {
         continue;
       }
       const inner = (wrapper.value as forge.asn1.Asn1[])[0];
-      const digits = String(inner.value).replace(/\D/g, "");
-      return digits.length === 14 ? digits : null;
+      const cnpj = String(inner.value).replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+      return /^[0-9A-Z]{14}$/.test(cnpj) ? cnpj : null;
     } catch {
       // Malformed otherName: treat the certificate as not an e-CNPJ.
       return null;
@@ -67,44 +67,48 @@ function extractCnpj(certificate: forge.pki.Certificate): string | null {
 
 // node-forge instead of Node's TLS `pfx` option because OpenSSL 3 rejects the
 // RC2/3DES-encrypted bundles many Brazilian CAs still issue.
-// node-forge derives keys in synchronous JS (~3 ms per 1,000 iterations) and
-// takes the count from the file before checking the password, so an untrusted
-// .pfx could freeze the event loop. Real A1 exports use 2,000 to ~100,000.
-const MAX_KDF_ITERATIONS = 200_000;
+// node-forge instead of Node's TLS `pfx` option because OpenSSL 3 rejects the
+// RC2/3DES-encrypted bundles many Brazilian CAs still issue.
+// forge parses and derives keys synchronously (~3 ms per 1,000 iterations),
+// so an untrusted file must be small and cheap before it reaches forge. Real
+// A1 files are a few KB, with 2,000 to ~100,000 iterations per derivation.
+const MAX_PFX_BYTES = 64 * 1024;
+const MAX_TOTAL_KDF_ITERATIONS = 300_000n;
 
 /**
- * PKCS#12 stores every salt as an OCTET STRING followed by its iteration
- * count (MacData, PBE and PBKDF2 params), outside the encrypted parts.
+ * Sum of every iteration count in the file. PKCS#12 stores each salt as an
+ * OCTET STRING followed by its count (MacData, PBE and PBKDF2 params), outside
+ * the encrypted parts.
  */
-function exceedsIterationCap(node: forge.asn1.Asn1): boolean {
+function totalIterations(node: forge.asn1.Asn1): bigint {
   if (Array.isArray(node.value)) {
     const children = node.value as forge.asn1.Asn1[];
-    return children.some((child, index) => {
+    return children.reduce((total, child, index) => {
       const previous = children[index - 1];
-      if (
-        child.type === forge.asn1.Type.INTEGER &&
-        previous?.type === forge.asn1.Type.OCTETSTRING &&
-        BigInt(`0x${forge.util.bytesToHex(child.value as string) || "0"}`) > BigInt(MAX_KDF_ITERATIONS)
-      ) {
-        return true;
-      }
-      return exceedsIterationCap(child);
-    });
+      const count =
+        child.type === forge.asn1.Type.INTEGER && previous?.type === forge.asn1.Type.OCTETSTRING
+          ? BigInt(`0x${forge.util.bytesToHex(child.value as string) || "0"}`)
+          : 0n;
+      return total + count + totalIterations(child);
+    }, 0n);
   }
   if (node.type === forge.asn1.Type.OCTETSTRING && typeof node.value === "string" && node.value.length > 2) {
     try {
-      return exceedsIterationCap(forge.asn1.fromDer(node.value));
+      return totalIterations(forge.asn1.fromDer(node.value));
     } catch {
-      return false;
+      return 0n;
     }
   }
-  return false;
+  return 0n;
 }
 
 /**
  * Opens an ICP-Brasil A1 e-CNPJ (.pfx / .p12) and reads its CNPJ.
  *
- * @throws {CertificateError} `unreadable` (wrong password or bad file), `missing_key`, `missing_cnpj`.
+ * Extraction only: the ICP-Brasil chain is not validated, so `cnpj` is not proof that the uploader owns it.
+ *
+ * @throws {CertificateError} `unreadable` (wrong password, bad file, over 64 KB or 300,000 total KDF
+ * iterations), `missing_key`, `missing_cnpj`.
  * @example
  * const certificate = loadCertificate(readFileSync("cert.pfx"), password);
  * certificate.cnpj; // "11222333000181"
@@ -113,8 +117,9 @@ function exceedsIterationCap(node: forge.asn1.Asn1): boolean {
 export function loadCertificate(pfx: Buffer, password: string): Certificate {
   let p12: forge.pkcs12.Pkcs12Pfx;
   try {
+    if (pfx.length > MAX_PFX_BYTES) throw new Error("file above size cap");
     const asn1 = forge.asn1.fromDer(pfx.toString("binary"));
-    if (exceedsIterationCap(asn1)) throw new Error("iteration count above cap");
+    if (totalIterations(asn1) > MAX_TOTAL_KDF_ITERATIONS) throw new Error("iterations above cap");
     p12 = forge.pkcs12.pkcs12FromAsn1(asn1, password);
   } catch {
     throw new CertificateError(

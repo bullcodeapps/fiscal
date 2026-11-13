@@ -35,10 +35,18 @@ describe("buildCancellation", () => {
   });
 
   it.each([
-    [{ accessKey: "4208203" }, "accessKey must be the 50-digit chave de acesso"],
-    [{ authorCnpj: "1\"><x" }, "authorCnpj must be 14 digits"],
+    [{ accessKey: "4208203" }, "accessKey must be the 50-character chave de acesso"],
+    [{ authorCnpj: "1\"><x" }, "authorCnpj must be 14 digits or uppercase letters"],
   ])("rejects a malformed key before it reaches the Id attribute (%o)", (patch, message) => {
     expect(() => buildCancellation({ ...input, ...patch }, certificate)).toThrow(message);
+  });
+
+  it("accepts the access key of a provider with an alphanumeric CNPJ", () => {
+    const accessKey = "420820322" + "12ABC34501DE35" + "000000000000426100762796533";
+
+    expect(buildCancellation({ ...input, accessKey, authorCnpj: "12ABC34501DE35" }, certificate)).toContain(
+      `<chNFSe>${accessKey}</chNFSe>`,
+    );
   });
 
   it.each(["curto demais", "x".repeat(256)])("rejects a justification outside 15-255 characters", (description) => {

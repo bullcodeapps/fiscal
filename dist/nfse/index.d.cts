@@ -1,4 +1,4 @@
-import { E as Environment, C as Certificate } from '../environment-BnNMo0kQ.cjs';
+import { E as Environment, C as Certificate } from '../environment-uA3KuLi2.cjs';
 
 interface StreetAddress {
     xLgr: string;
@@ -224,7 +224,7 @@ interface SefinClientOptions {
     environment: Environment;
     /** The provider's A1, used for mTLS. */
     certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">;
-    /** Per request. Default 30000. A timeout throws `SefinError` `unavailable`. */
+    /** Idle time per request (no data received), not a total deadline. Default 30000. Throws `SefinError` `unavailable`. */
     timeoutMs?: number;
 }
 /**

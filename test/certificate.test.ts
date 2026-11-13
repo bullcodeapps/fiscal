@@ -20,6 +20,12 @@ describe("loadCertificate", () => {
     expect(certificate.certificatePem).toContain("BEGIN CERTIFICATE");
   });
 
+  it("keeps the letters of an alphanumeric CNPJ", () => {
+    const certificate = loadCertificate(makePfx({ password: "x", cnpj: "12ABC34501DE35" }), "x");
+
+    expect(certificate.cnpj).toBe("12ABC34501DE35");
+  });
+
   it.each([
     {
       scenario: "wrong password",
@@ -37,6 +43,20 @@ describe("loadCertificate", () => {
       // A huge MAC iteration count would freeze the event loop inside forge.
       scenario: "an iteration count above the cap",
       pfx: () => withMacIterations(makePfx({ password: "s3cret", cnpj: "11222333000181" }), 2_000_000_000),
+      password: "s3cret",
+      code: "unreadable",
+    },
+    {
+      // Each count passes the per-value cap, but forge runs all three derivations back to back.
+      scenario: "a total iteration count above the cap",
+      pfx: () => makePfx({ password: "s3cret", cnpj: "11222333000181", count: 160_000 }),
+      password: "s3cret",
+      code: "unreadable",
+    },
+    {
+      // A valid bundle, but real A1 files are a few KB; a large one is parsed synchronously.
+      scenario: "a file over 64 KB",
+      pfx: () => makePfx({ password: "s3cret", cnpj: "11222333000181", padCertificates: 100 }),
       password: "s3cret",
       code: "unreadable",
     },

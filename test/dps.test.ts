@@ -160,10 +160,16 @@ describe("export of services", () => {
     ).toThrow("serv: exactly one of cLocPrestacao or cPaisPrestacao");
   });
 
+  it("accepts an alphanumeric CNPJ in the provider and the DPS Id", () => {
+    const dps = buildDps({ ...accepted, prest: { ...accepted.prest, CNPJ: "12ABC34501DE35" } });
+
+    expect(dps.id).toBe("DPS42082032" + "12ABC34501DE35" + "00900" + "000001793042430");
+  });
+
   // These fields form the DPS Id attribute: a bad value breaks the XML or comes back as E0004.
   it.each([
     [{ cLocEmi: "420820" }, "cLocEmi: must be the 7-digit IBGE code"],
-    [{ prest: { ...accepted.prest, CNPJ: "11.222.333/0001-81" } }, "prest: CNPJ must be 14 digits"],
+    [{ prest: { ...accepted.prest, CNPJ: "11.222.333/0001-81" } }, "prest: CNPJ must be 14 digits or uppercase letters"],
     [{ serie: "1\"><x" }, "serie: must be 1 to 5 digits"],
     [{ nDPS: "0" }, "nDPS: must be 1 to 15 digits, not starting with 0"],
   ])("rejects a DPS key field Sefin would refuse (%o)", (patch, message) => {

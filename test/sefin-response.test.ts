@@ -67,6 +67,24 @@ describe("interpretEmission", () => {
     expect((error as SefinError).kind).toBe(kind);
     expect((error as SefinError).messages.map((m) => m.code)).toEqual(codes);
   });
+
+  // A 201 whose payload cannot be decoded is not an answer: the note may exist, so it must be reconciled.
+  it.each([
+    { scenario: "malformed gzip", payload: Buffer.from("not gzip").toString("base64") },
+    { scenario: "a gzip bomb over 10 MB", payload: gzipSync(Buffer.alloc(11 * 1024 * 1024)).toString("base64") },
+  ])("treats $scenario in an authorization as unavailable", ({ payload }) => {
+    let error: unknown;
+    try {
+      interpretEmission({
+        status: 201,
+        body: JSON.stringify({ chaveAcesso: "42082032211222333000181000000000000126104513068510", nfseXmlGZipB64: payload }),
+      });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error).toBeInstanceOf(SefinError);
+    expect((error as SefinError).kind).toBe("unavailable");
+  });
 });
 
 describe("interpretEvent", () => {

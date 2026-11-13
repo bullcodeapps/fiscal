@@ -128,6 +128,19 @@ describe("buildDanfseModel", () => {
 
     expect(federal.rows).toHaveLength(rows);
   });
+
+  it("reads finNFSe and the IBS/CBS situation from the production layout", () => {
+    // Produção nests finNFSe in IBSCBS and CST/cClassTrib in gIBSCBS (nfse-esquemas_xsd-v1-01-20260209).
+    const production = fixture("nfse-990401")
+      .replace("</tpEmit><finNFSe>0</finNFSe>", "</tpEmit>")
+      .replace("<IBSCBS><indFinal>", "<IBSCBS><finNFSe>0</finNFSe><indFinal>")
+      .replace(/<trib>(<CST>\d+<\/CST><cClassTrib>\d+<\/cClassTrib>)<\/trib>/, "<trib><gIBSCBS>$1</gIBSCBS></trib>");
+    expect(production).toContain("<gIBSCBS>");
+    const model = buildDanfseModel(production);
+
+    expect(model.identification.flat().find((f) => f.label === "FINALIDADE")?.value).toBe("NFS-e regular");
+    expect(fieldValues(model, "TRIBUTAÇÃO IBS / CBS")["CST / cClassTrib"]).toBe("000 / 000001");
+  });
 });
 
 describe("renderDanfse", () => {

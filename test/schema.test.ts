@@ -28,10 +28,10 @@ const consumerDps = (environment: Environment): DpsInput => ({
   serie: "00800",
   nDPS: "1",
   cLocEmi: "4208302",
-  verAplic: "floraclin",
+  verAplic: "fiscal-test",
   prest: {
     CNPJ: "11222333000181",
-    IM: "38923",
+    IM: "12345",
     regTrib: { opSimpNac: 3, regApTribSN: 1, regEspTrib: 0 },
   },
   toma: {
@@ -114,7 +114,7 @@ describe("Sefin schemas", () => {
         authorCnpj: "11222333000181",
         reason: 2,
         description: "Pagamento estornado no sistema.",
-        verAplic: "floraclin",
+        verAplic: "fiscal-test",
         at: new Date("2026-11-05T16:48:11Z"),
       },
       certificate,

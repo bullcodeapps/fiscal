@@ -1,5 +1,14 @@
 import https from "node:https";
+import { gunzipSync } from "node:zlib";
 import type { Certificate } from "../core/certificate";
+
+// Notes and pages of 50 documents are far below this; anything larger is not a valid answer.
+const MAX_BYTES = 10 * 1024 * 1024;
+
+/** Decodes a base64 gzip payload. Throws on malformed data or output above 10 MB. */
+export function gunzipBase64(value: string): string {
+  return gunzipSync(Buffer.from(value, "base64"), { maxOutputLength: MAX_BYTES }).toString("utf8");
+}
 
 export interface RawResponse {
   status: number;
@@ -10,7 +19,7 @@ export function mtlsAgent(certificate: Pick<Certificate, "privateKeyPem" | "cert
   return new https.Agent({ key: certificate.privateKeyPem, cert: certificate.certificatePem });
 }
 
-/** Rejects only when no HTTP answer arrived (network error or timeout). */
+/** Rejects only when no complete HTTP answer arrived (network error, idle timeout, body above 10 MB). */
 export function request(
   agent: https.Agent,
   url: string,
@@ -32,7 +41,12 @@ export function request(
       },
       (res) => {
         const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        let size = 0;
+        res.on("data", (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > MAX_BYTES) req.destroy(new Error("response above size cap"));
+          else chunks.push(chunk);
+        });
         res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }));
         res.on("error", reject);
       },

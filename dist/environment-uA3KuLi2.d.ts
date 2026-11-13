@@ -7,7 +7,7 @@ declare class CertificateError extends Error {
 }
 /** An opened A1 e-CNPJ. Holds the private key: keep it in memory only, never log or persist it. */
 interface Certificate {
-    /** The holder's CNPJ, 14 digits. Use it as `prest.CNPJ` and `authorCnpj`. */
+    /** The holder's CNPJ: 14 digits, or digits and uppercase letters. Use it as `prest.CNPJ` and `authorCnpj`. */
     cnpj: string;
     /** Subject CN, usually "RAZAO SOCIAL:CNPJ". */
     subjectName: string;
@@ -23,7 +23,10 @@ interface Certificate {
 /**
  * Opens an ICP-Brasil A1 e-CNPJ (.pfx / .p12) and reads its CNPJ.
  *
- * @throws {CertificateError} `unreadable` (wrong password or bad file), `missing_key`, `missing_cnpj`.
+ * Extraction only: the ICP-Brasil chain is not validated, so `cnpj` is not proof that the uploader owns it.
+ *
+ * @throws {CertificateError} `unreadable` (wrong password, bad file, over 64 KB or 300,000 total KDF
+ * iterations), `missing_key`, `missing_cnpj`.
  * @example
  * const certificate = loadCertificate(readFileSync("cert.pfx"), password);
  * certificate.cnpj; // "11222333000181"

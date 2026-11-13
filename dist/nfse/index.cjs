@@ -160,7 +160,7 @@ function ibsCbs(value, nt009) {
 }
 function assertKeyFields(input) {
   if (!/^\d{7}$/.test(input.cLocEmi)) throw new Error("cLocEmi: must be the 7-digit IBGE code");
-  if (!/^\d{14}$/.test(input.prest.CNPJ)) throw new Error("prest: CNPJ must be 14 digits");
+  if (!/^[0-9A-Z]{14}$/.test(input.prest.CNPJ)) throw new Error("prest: CNPJ must be 14 digits or uppercase letters");
   if (!/^\d{1,5}$/.test(input.serie)) throw new Error("serie: must be 1 to 5 digits");
   if (!/^[1-9]\d{0,14}$/.test(input.nDPS)) throw new Error("nDPS: must be 1 to 15 digits, not starting with 0");
 }
@@ -272,10 +272,15 @@ function signDps(dpsXml, certificate) {
 }
 
 // src/nfse/sefin-client.ts
-var import_node_zlib = require("zlib");
+var import_node_zlib2 = require("zlib");
 
 // src/nfse/http.ts
 var import_node_https = __toESM(require("https"), 1);
+var import_node_zlib = require("zlib");
+var MAX_BYTES = 10 * 1024 * 1024;
+function gunzipBase64(value) {
+  return (0, import_node_zlib.gunzipSync)(Buffer.from(value, "base64"), { maxOutputLength: MAX_BYTES }).toString("utf8");
+}
 function mtlsAgent(certificate) {
   return new import_node_https.default.Agent({ key: certificate.privateKeyPem, cert: certificate.certificatePem });
 }
@@ -294,7 +299,12 @@ function request(agent, url, method, timeoutMs, body) {
       },
       (res) => {
         const chunks = [];
-        res.on("data", (chunk) => chunks.push(chunk));
+        let size = 0;
+        res.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > MAX_BYTES) req.destroy(new Error("response above size cap"));
+          else chunks.push(chunk);
+        });
         res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }));
         res.on("error", reject);
       }
@@ -344,6 +354,13 @@ function parseJson(body) {
     return null;
   }
 }
+function decode(gzipB64, httpStatus) {
+  try {
+    return gunzipBase64(gzipB64);
+  } catch {
+    throw new SefinError("unavailable", [], httpStatus);
+  }
+}
 function interpretEmission(response) {
   const json = parseJson(response.body);
   if (response.status >= 200 && response.status < 300 && json) {
@@ -352,7 +369,7 @@ function interpretEmission(response) {
     if (typeof accessKey === "string" && typeof nfseGzip === "string") {
       return {
         accessKey,
-        nfseXml: (0, import_node_zlib.gunzipSync)(Buffer.from(nfseGzip, "base64")).toString("utf8"),
+        nfseXml: decode(nfseGzip, response.status),
         dpsId: String(json.idDps ?? json.idDPS ?? ""),
         alerts: toMessages(json.alertas)
       };
@@ -369,7 +386,7 @@ function interpretEmission(response) {
 function interpretEvent(response) {
   const json = parseJson(response.body);
   if (response.status >= 200 && response.status < 300 && typeof json?.eventoXmlGZipB64 === "string") {
-    return (0, import_node_zlib.gunzipSync)(Buffer.from(json.eventoXmlGZipB64, "base64")).toString("utf8");
+    return decode(json.eventoXmlGZipB64, response.status);
   }
   const messages = toMessages(json?.erro ?? json?.erros);
   throw new SefinError(
@@ -390,7 +407,7 @@ var SefinClient = class {
   /** Sends a signed DPS. Authorization is synchronous. */
   async emit(signedDpsXml) {
     const body = JSON.stringify({
-      dpsXmlGZipB64: (0, import_node_zlib.gzipSync)(signedDpsXml).toString("base64")
+      dpsXmlGZipB64: (0, import_node_zlib2.gzipSync)(signedDpsXml).toString("base64")
     });
     const response = await this.request("POST", "/nfse", body);
     return interpretEmission(response);
@@ -402,7 +419,7 @@ var SefinClient = class {
    */
   async registerEvent(accessKey, signedEventXml) {
     const body = JSON.stringify({
-      pedidoRegistroEventoXmlGZipB64: (0, import_node_zlib.gzipSync)(signedEventXml).toString("base64")
+      pedidoRegistroEventoXmlGZipB64: (0, import_node_zlib2.gzipSync)(signedEventXml).toString("base64")
     });
     const response = await this.request("POST", `/nfse/${encodeURIComponent(accessKey)}/eventos`, body);
     return interpretEvent(response);
@@ -422,7 +439,7 @@ var SefinClient = class {
     const response = await this.request("GET", `/nfse/${encodeURIComponent(accessKey)}`);
     const json = parseJson(response.body);
     if (response.status === 200 && typeof json?.nfseXmlGZipB64 === "string") {
-      return (0, import_node_zlib.gunzipSync)(Buffer.from(json.nfseXmlGZipB64, "base64")).toString("utf8");
+      return decode(json.nfseXmlGZipB64, response.status);
     }
     const messages = toMessages(json?.erros);
     throw new SefinError(
@@ -623,7 +640,9 @@ function buildDanfseModel(nfseXml) {
   const totCibs = child(ibsCbs2, "totCIBS");
   const gIbs = child(totCibs, "gIBS");
   const dpsIbsCbs = child(infDps, "IBSCBS");
-  const dpsIbsCbsTrib = child(child(dpsIbsCbs, "valores"), "trib");
+  const dpsTrib = child(child(dpsIbsCbs, "valores"), "trib");
+  const dpsIbsCbsTrib = child(dpsTrib, "gIBSCBS") ?? dpsTrib;
+  const finNfse = text(infDps, "finNFSe") ?? text(dpsIbsCbs, "finNFSe");
   const accessKey = String(inf?.["@_Id"] ?? "").replace(/^NFS/, "");
   const tpAmb = text(infDps, "tpAmb");
   const dCompet = text(infDps, "dCompet");
@@ -854,7 +873,7 @@ function buildDanfseModel(nfseXml) {
       [
         { label: "EMITENTE DA NFS-E", value: describe(TP_EMIT, text(infDps, "tpEmit")), col: 0, shaded: true },
         { label: "SITUA\xC7\xC3O DA NFS-E", value: describe(C_STAT, text(inf, "cStat")), col: 1 },
-        { label: "FINALIDADE", value: describe(FIN_NFSE, text(infDps, "finNFSe")), col: 2 }
+        { label: "FINALIDADE", value: describe(FIN_NFSE, finNfse), col: 2 }
       ]
     ],
     blocks,
@@ -996,8 +1015,8 @@ var NAMESPACE2 = "http://www.sped.fazenda.gov.br/nfse";
 var LAYOUT_VERSION2 = "1.01";
 var CANCELLATION = "101101";
 function buildCancellation(input, certificate) {
-  if (!/^\d{50}$/.test(input.accessKey)) throw new RangeError("accessKey must be the 50-digit chave de acesso");
-  if (!/^\d{14}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits");
+  if (!/^[0-9A-Z]{50}$/.test(input.accessKey)) throw new RangeError("accessKey must be the 50-character chave de acesso");
+  if (!/^[0-9A-Z]{14}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits or uppercase letters");
   const description = input.description.trim();
   if (description.length < 15 || description.length > 255) {
     throw new RangeError("A justificativa do cancelamento deve ter entre 15 e 255 caracteres.");
@@ -1056,7 +1075,6 @@ function findKey(node, key) {
 }
 
 // src/nfse/adn-client.ts
-var import_node_zlib2 = require("zlib");
 var BASE_URLS2 = {
   production: "https://adn.nfse.gov.br/contribuintes",
   restricted: "https://adn.producaorestrita.nfse.gov.br/contribuintes"
@@ -1097,12 +1115,16 @@ function interpretDistribution(response) {
   if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     const batch = Array.isArray(json?.LoteDFe) ? json.LoteDFe : [];
-    return batch.map((doc) => ({
-      nsu: Number(doc.NSU),
-      accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
-      type: String(doc.TipoDocumento ?? ""),
-      xml: (0, import_node_zlib2.gunzipSync)(Buffer.from(String(doc.ArquivoXml ?? ""), "base64")).toString("utf8")
-    }));
+    try {
+      return batch.map((doc) => ({
+        nsu: Number(doc.NSU),
+        accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
+        type: String(doc.TipoDocumento ?? ""),
+        xml: gunzipBase64(String(doc.ArquivoXml ?? ""))
+      }));
+    } catch {
+      throw new AdnError("unavailable", [], response.status);
+    }
   }
   const messages = toMessages2(json?.Erros);
   if (status === "REJEICAO") throw new AdnError("rejected", messages, response.status);
@@ -1115,7 +1137,7 @@ var AdnClient = class {
   timeoutMs;
   constructor(options) {
     this.baseUrl = BASE_URLS2[options.environment];
-    this.cnpj = options.cnpj.replace(/\D/g, "");
+    this.cnpj = options.cnpj.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
     this.agent = mtlsAgent(options.certificate);
     this.timeoutMs = options.timeoutMs ?? 3e4;
   }

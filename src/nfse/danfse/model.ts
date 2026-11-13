@@ -226,7 +226,10 @@ export function buildDanfseModel(nfseXml: string): DanfseModel {
   const totCibs = child(ibsCbs, "totCIBS");
   const gIbs = child(totCibs, "gIBS");
   const dpsIbsCbs = child(infDps, "IBSCBS");
-  const dpsIbsCbsTrib = child(child(dpsIbsCbs, "valores"), "trib");
+  // Produção nests these in IBSCBS and gIBSCBS; the NT 009 layout does not.
+  const dpsTrib = child(child(dpsIbsCbs, "valores"), "trib");
+  const dpsIbsCbsTrib = child(dpsTrib, "gIBSCBS") ?? dpsTrib;
+  const finNfse = text(infDps, "finNFSe") ?? text(dpsIbsCbs, "finNFSe");
 
   const accessKey = String(inf?.["@_Id"] ?? "").replace(/^NFS/, "");
   const tpAmb = text(infDps, "tpAmb");
@@ -484,7 +487,7 @@ export function buildDanfseModel(nfseXml: string): DanfseModel {
       [
         { label: "EMITENTE DA NFS-E", value: describe(TP_EMIT, text(infDps, "tpEmit")), col: 0, shaded: true },
         { label: "SITUAÇÃO DA NFS-E", value: describe(C_STAT, text(inf, "cStat")), col: 1 },
-        { label: "FINALIDADE", value: describe(FIN_NFSE, text(infDps, "finNFSe")), col: 2 },
+        { label: "FINALIDADE", value: describe(FIN_NFSE, finNfse), col: 2 },
       ],
     ],
     blocks,

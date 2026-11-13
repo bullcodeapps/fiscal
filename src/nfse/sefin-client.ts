@@ -1,8 +1,8 @@
 import type https from "node:https";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
-import { mtlsAgent, request, type RawResponse } from "./http";
+import { gunzipBase64, mtlsAgent, request, type RawResponse } from "./http";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://sefin.nfse.gov.br/SefinNacional",
@@ -74,6 +74,15 @@ function parseJson(body: string): Record<string, unknown> | null {
   }
 }
 
+/** A payload that cannot be decoded is not a definitive answer. */
+function decode(gzipB64: string, httpStatus: number): string {
+  try {
+    return gunzipBase64(gzipB64);
+  } catch {
+    throw new SefinError("unavailable", [], httpStatus);
+  }
+}
+
 /** Maps a raw Sefin answer to a result or a SefinError. */
 export function interpretEmission(response: RawResponse): IssuedNfse {
   const json = parseJson(response.body);
@@ -84,7 +93,7 @@ export function interpretEmission(response: RawResponse): IssuedNfse {
     if (typeof accessKey === "string" && typeof nfseGzip === "string") {
       return {
         accessKey,
-        nfseXml: gunzipSync(Buffer.from(nfseGzip, "base64")).toString("utf8"),
+        nfseXml: decode(nfseGzip, response.status),
         dpsId: String(json.idDps ?? json.idDPS ?? ""),
         alerts: toMessages(json.alertas),
       };
@@ -105,7 +114,7 @@ export function interpretEmission(response: RawResponse): IssuedNfse {
 export function interpretEvent(response: RawResponse): string {
   const json = parseJson(response.body);
   if (response.status >= 200 && response.status < 300 && typeof json?.eventoXmlGZipB64 === "string") {
-    return gunzipSync(Buffer.from(json.eventoXmlGZipB64, "base64")).toString("utf8");
+    return decode(json.eventoXmlGZipB64, response.status);
   }
   const messages = toMessages(json?.erro ?? json?.erros);
   throw new SefinError(
@@ -119,7 +128,7 @@ export interface SefinClientOptions {
   environment: Environment;
   /** The provider's A1, used for mTLS. */
   certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">;
-  /** Per request. Default 30000. A timeout throws `SefinError` `unavailable`. */
+  /** Idle time per request (no data received), not a total deadline. Default 30000. Throws `SefinError` `unavailable`. */
   timeoutMs?: number;
 }
 
@@ -177,7 +186,7 @@ export class SefinClient {
     const response = await this.request("GET", `/nfse/${encodeURIComponent(accessKey)}`);
     const json = parseJson(response.body);
     if (response.status === 200 && typeof json?.nfseXmlGZipB64 === "string") {
-      return gunzipSync(Buffer.from(json.nfseXmlGZipB64, "base64")).toString("utf8");
+      return decode(json.nfseXmlGZipB64, response.status);
     }
     const messages = toMessages(json?.erros);
     throw new SefinError(

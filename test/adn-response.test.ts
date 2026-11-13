@@ -50,4 +50,21 @@ describe("interpretDistribution", () => {
     expect(error).toBeInstanceOf(AdnError);
     expect(error).toMatchObject({ kind, message, httpStatus: status });
   });
+
+  it("treats a document that cannot be decoded as unavailable, so the cursor does not move past it", () => {
+    let error: unknown;
+    try {
+      interpretDistribution({
+        status: 200,
+        body: JSON.stringify({
+          StatusProcessamento: "DOCUMENTOS_LOCALIZADOS",
+          LoteDFe: [{ NSU: 9, ChaveAcesso: null, TipoDocumento: "NFSE", ArquivoXml: "bm90IGd6aXA=" }],
+        }),
+      });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error).toBeInstanceOf(AdnError);
+    expect((error as AdnError).kind).toBe("unavailable");
+  });
 });

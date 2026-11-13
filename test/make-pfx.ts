@@ -7,6 +7,10 @@ interface MakePfxOptions {
   cnpj?: string;
   notBefore?: Date;
   notAfter?: Date;
+  /** Key-derivation iterations for the key bag, the certificate safe and the MAC (forge default 2048). */
+  count?: number;
+  /** Extra copies of the certificate, to grow the file. */
+  padCertificates?: number;
 }
 
 /** Self-signed A1 bundle shaped like an ICP-Brasil e-CNPJ. */
@@ -40,6 +44,10 @@ export function makePfx(options: MakePfxOptions): Buffer {
   }
   cert.sign(key, forge.md.sha256.create());
 
-  const p12 = forge.pkcs12.toPkcs12Asn1(key, [cert], options.password, { algorithm: "3des" });
+  const certs = [cert, ...Array.from({ length: options.padCertificates ?? 0 }, () => cert)];
+  const p12 = forge.pkcs12.toPkcs12Asn1(key, certs, options.password, {
+    algorithm: "3des",
+    ...(options.count ? { count: options.count } : {}),
+  });
   return Buffer.from(forge.asn1.toDer(p12).getBytes(), "binary");
 }

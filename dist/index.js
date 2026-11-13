@@ -29,40 +29,40 @@ function extractCnpj(certificate) {
         continue;
       }
       const inner = wrapper.value[0];
-      const digits = String(inner.value).replace(/\D/g, "");
-      return digits.length === 14 ? digits : null;
+      const cnpj = String(inner.value).replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+      return /^[0-9A-Z]{14}$/.test(cnpj) ? cnpj : null;
     } catch {
       return null;
     }
   }
   return null;
 }
-var MAX_KDF_ITERATIONS = 2e5;
-function exceedsIterationCap(node) {
+var MAX_PFX_BYTES = 64 * 1024;
+var MAX_TOTAL_KDF_ITERATIONS = 300000n;
+function totalIterations(node) {
   if (Array.isArray(node.value)) {
     const children = node.value;
-    return children.some((child, index) => {
+    return children.reduce((total, child, index) => {
       const previous = children[index - 1];
-      if (child.type === forge.asn1.Type.INTEGER && previous?.type === forge.asn1.Type.OCTETSTRING && BigInt(`0x${forge.util.bytesToHex(child.value) || "0"}`) > BigInt(MAX_KDF_ITERATIONS)) {
-        return true;
-      }
-      return exceedsIterationCap(child);
-    });
+      const count = child.type === forge.asn1.Type.INTEGER && previous?.type === forge.asn1.Type.OCTETSTRING ? BigInt(`0x${forge.util.bytesToHex(child.value) || "0"}`) : 0n;
+      return total + count + totalIterations(child);
+    }, 0n);
   }
   if (node.type === forge.asn1.Type.OCTETSTRING && typeof node.value === "string" && node.value.length > 2) {
     try {
-      return exceedsIterationCap(forge.asn1.fromDer(node.value));
+      return totalIterations(forge.asn1.fromDer(node.value));
     } catch {
-      return false;
+      return 0n;
     }
   }
-  return false;
+  return 0n;
 }
 function loadCertificate(pfx, password) {
   let p12;
   try {
+    if (pfx.length > MAX_PFX_BYTES) throw new Error("file above size cap");
     const asn1 = forge.asn1.fromDer(pfx.toString("binary"));
-    if (exceedsIterationCap(asn1)) throw new Error("iteration count above cap");
+    if (totalIterations(asn1) > MAX_TOTAL_KDF_ITERATIONS) throw new Error("iterations above cap");
     p12 = forge.pkcs12.pkcs12FromAsn1(asn1, password);
   } catch {
     throw new CertificateError(
