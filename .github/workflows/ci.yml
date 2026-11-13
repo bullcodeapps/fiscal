@@ -32,6 +32,7 @@ jobs:
       - run: pnpm test
       - run: pnpm check:docs
       - run: pnpm dlx publint@0.3
+      - run: pnpm dlx @arethetypeswrong/cli@0.18 --pack .
 
   ci:
     if: always()

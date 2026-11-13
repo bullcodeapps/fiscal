@@ -2,6 +2,12 @@
 
 Install with `pnpm add @bullcode/fiscal`.
 
+## v0.3.5 (2026-11-13)
+
+- pdfkit 0.20.2. The DANFSe is pixel-identical to 0.3.4, also inside a bundled Next.js app.
+- Built with tsup 9: the same JavaScript, and type files that use `export type`.
+- CI checks the package types for node10, CommonJS, ESM and bundlers.
+
 ## v0.3.4 (2026-11-13)
 
 - Published on npm as `@bullcode/fiscal`. `dist` is no longer committed, so install from npm. Git tags up to

@@ -11,6 +11,8 @@ Thanks for helping. Bug reports, fixes for Sefin rejections and new fiscal docum
 
 ## Development
 
+The build (tsup 9) needs Node 20.19+, 22.12+ or 24. The library itself runs on Node 20.11+.
+
 ```sh
 pnpm install
 pnpm typecheck
