@@ -78,6 +78,17 @@ export function readNfseEventSummary(eventXml: string): NfseEventSummary {
   };
 }
 
+/**
+ * The note, code and sequence of a registered event: infEvento with its nSeqEvento around the request.
+ * Null for anything else, including the bare request, which proves nothing.
+ */
+export function registeredEvent(eventXml: string): { accessKey: string; code: string; sequence: number } | null {
+  const sequence = /<(?:\w+:)?infEvento\b[\s\S]*?<(?:\w+:)?nSeqEvento>(\d+)</.exec(eventXml)?.[1];
+  if (sequence === undefined) return null;
+  const { accessKey, code } = readNfseEventSummary(eventXml);
+  return isAccessKey(accessKey) && code ? { accessKey, code, sequence: Number(sequence) } : null;
+}
+
 function findKey(node: unknown, key: string): unknown {
   if (!node || typeof node !== "object") return undefined;
   const record = node as Record<string, unknown>;

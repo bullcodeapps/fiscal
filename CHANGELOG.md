@@ -38,8 +38,9 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
   only for Sefin's error JSON and requires the registered `infEvento` with the requested sequence. Otherwise
   `unavailable`.
 - `AdnClient`: a page entry that is not an object, a document without `TipoDocumento`, a page without a
-  `LoteDFe` array, NSUs not strictly increasing, or invalid UTF-8 is `unavailable`. `doc.accessKey` of a note
-  comes from its XML.
+  `LoteDFe` array, NSUs not strictly increasing or not plain integers, or invalid UTF-8 is `unavailable`.
+  `doc.accessKey` of a note or event comes from its XML. An `EVENTO` must be a registered event (not a bare
+  request) whose key matches the envelope, else `unavailable`.
 - `buildDps` requires exactly one taker identity (`CNPJ`, `CPF`, `NIF` or `cNaoNIF`).
 - DANFSe shows `cPaisPrestacao` / `cPaisResult` instead of BR for services abroad and exports.
 - MIT license.

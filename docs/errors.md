@@ -62,7 +62,7 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 
 | Condition | Meaning | Fix |
 | --- | --- | --- |
-| Either kind, `httpStatus` 401 or 403 | Sefin refused the TLS client certificate. The request was not processed. | Check the certificate (expired, revoked, wrong CNPJ, not enabled for NFS-e). The DPS number is still unused. |
+| Either kind, `httpStatus` 401 or 403 | Sefin refused the TLS client certificate. The request was not processed. | Check the certificate (expired, revoked, wrong CNPJ, not enabled for NFS-e). On `emit`, the DPS number is still unused. On a lookup (`findAccessKeyByDpsId`, `getNfseXml`, `findEvent`) nothing is known: the note or event may exist, so keep the row as it is. |
 | `kind: "rejected"`, a message has code `E0014` | Sefin already holds a note for this `serie` + `nDPS` | Not a rejection: reconcile with `findAccessKeyByDpsId` and check it with `isNfseOfDps` |
 | `kind: "rejected"` (any other case) | Sefin answered 4xx with error messages. Nothing was issued (or, for events, registered). | Show `messages`, fix the data, build and sign again with the same `nDPS` |
 | `kind: "unavailable"`, `httpStatus` undefined | Timeout or network failure. No answer arrived. | Treat the DPS as possibly authorized. Reconcile with `findAccessKeyByDpsId` before resending. |

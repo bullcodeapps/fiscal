@@ -370,6 +370,17 @@ interface CancelStore {
 }
 
 const CANCELLATION = "101101";
+/** Events that cancel a note: cancellation, by substitution, granted in análise fiscal, de ofício. */
+const CANCELLING_EVENTS = ["101101", "105102", "105104", "305101"];
+
+/** The registered event that cancelled the note, if any. Throws SefinError when Sefin cannot answer. */
+async function findCancellation(client: CancelClient, accessKey: string): Promise<string | null> {
+  for (const type of CANCELLING_EVENTS) {
+    const found = await client.findEvent(accessKey, type);
+    if (found) return found;
+  }
+  return null;
+}
 
 /**
  * Request time. Throws RangeError on invalid input: answer the user, no state change. False when the note is not
@@ -427,9 +438,9 @@ export async function cancel(store: CancelStore, id: string, client: CancelClien
   } catch (e) {
     if (!(e instanceof SefinError)) throw e;
     if (e.kind !== "rejected" || e.httpStatus === 401 || e.httpStatus === 403) return stay(e);
-    // A rejection is final only when Sefin holds no cancellation for the note.
+    // A rejection is final only when no event cancelled the note (E0840 can mean a substitution did).
     try {
-      const found = await client.findEvent(row.accessKey, CANCELLATION);
+      const found = await findCancellation(client, row.accessKey);
       if (found) return cancelled(found);
     } catch {
       return stay(e);
@@ -443,8 +454,8 @@ export async function cancel(store: CancelStore, id: string, client: CancelClien
 | Outcome | Row |
 | --- | --- |
 | `registerEvent` succeeds, or `findEvent` finds the event | `cancelled`, with the event XML |
-| `rejected` and `findEvent` returns null | Back to `authorized`, with the messages. Common causes: a municipal limit (deadline, default 730 days; value; taxes already paid). See the event codes in [codes.md](./codes.md). |
-| `unavailable`, 401/403, or `findEvent` fails | Stays `cancelling`, with the messages. Retry later (fix the certificate first on 401/403). |
+| `rejected` and no cancelling event exists | Back to `authorized`, with the messages. Common causes: a municipal limit (deadline, default 730 days; value; taxes already paid). See the event codes in [codes.md](./codes.md). |
+| `unavailable`, 401/403, or `findEvent` fails | Stays `cancelling`, with the messages. Retry later. On 401/403 the stored request is signed with the refused certificate: replace the certificate, then build the request again with `buildCancellation` and the new certificate, and store it with `patch` under a claimed lease before the next attempt. The event Id does not change, so `findEvent` still finds an earlier send. |
 
 After the municipal deadline, only the taxpayer can ask for análise fiscal in the national portal.
 
@@ -456,6 +467,9 @@ receives its own notes and events back, so do not rely on the ADN import to conf
 cancellations: use `findAccessKeyByDpsId` and `findEvent` for those. Treat ADN documents for notes the app
 already tracks as idempotent updates.
 
+Store notes issued elsewhere in their own table (access key, environment, the `readNfseSummary` fields, the
+XML, `authorized` or `cancelled`), not as `NoteRow`: they have no DPS, `serie` or `nDPS` of yours.
+
 NSUs are numbered per interested CNPJ, so the cursor and the runner lock are scoped per (environment,
 queried CNPJ): one `AdnStore` per pair.
 
@@ -463,11 +477,13 @@ queried CNPJ): one `AdnStore` per pair.
 import type { Certificate } from "@bullcode/fiscal";
 import { AdnClient, type AdnDocument } from "@bullcode/fiscal/nfse";
 
-/** Events that cancel a note: cancellation, by substitution, granted in análise fiscal, de ofício. */
-const CANCELLING_EVENTS = ["101101", "105102", "105104", "305101"];
+// CANCELLING_EVENTS: the same list as in step 11.
 
 interface AdnStore {
-  /** Lease on this (environment, CNPJ) importer, or null when another run holds it. */
+  /**
+   * Lease on this (environment, CNPJ) importer, or null when another run holds it. Like `claim` in step 5, it
+   * takes over a lease older than 10 minutes, so a crashed run never blocks the importer for good.
+   */
   lock(): Promise<string | null>;
   /** Releases only this lease. */
   unlock(lease: string): Promise<void>;
@@ -502,14 +518,15 @@ export async function importFromAdn(
 What `apply` does, inside its transaction, failing when `lease` is no longer held:
 
 - Store every document's raw `doc.xml` by `doc.nsu`, whatever its type.
-- `doc.type === "NFSE"`: also upsert the note by `doc.accessKey` (read from the note's own XML, so it is safe as
-  the key) with `readNfseSummary(doc.xml)`. A note the app already tracks gets an idempotent update; one issued
-  elsewhere is new. For an event, `doc.accessKey` is the envelope's key or null: use the summary's `accessKey`.
-- Any other type: read it with `readNfseEventSummary(doc.xml)`. When its `code` is in `CANCELLING_EVENTS`, set the
-  note with that `accessKey` to `cancelled`, from `authorized` or `cancelling`, and clear the note's lease in the
-  same update, so a stale worker's later fenced write fails instead of overwriting `cancelled`. When `code` is
-  null (a well-formed document that is not an event), keep the raw XML only. Never fail the import on a type
-  you do not know.
+- For `NFSE` and `EVENTO`, `doc.accessKey` is the note's key, read from the document's own XML and checked
+  against the envelope. Use it as the key.
+- `doc.type === "NFSE"`: when the app issued the note (a `NoteRow` with this `accessKey`), do not change it: the
+  issuance worker owns its status. Otherwise upsert the imported note with `readNfseSummary(doc.xml)`.
+- `doc.type === "EVENTO"`: read it with `readNfseEventSummary(doc.xml)`. When its `code` is in
+  `CANCELLING_EVENTS`, set the note with `doc.accessKey` (`NoteRow` or imported) to `cancelled` from any status
+  except `cancelled`, and clear the note's lease in the same update, so a stale worker's later fenced write fails
+  instead of overwriting `cancelled`.
+- Any other type: keep the raw XML only. Never fail the import on a type you do not know.
 - The parsers throw `Error` on malformed XML. That rolls back the transaction and the cursor stays put: alert
   someone and retry later.
 - Move the cursor only forward: `UPDATE ... SET last_nsu = $nsu WHERE last_nsu < $nsu`. If the transaction

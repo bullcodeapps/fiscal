@@ -369,6 +369,12 @@ function readNfseEventSummary(eventXml) {
     code: codeKey ? codeKey.slice(1) : null
   };
 }
+function registeredEvent(eventXml) {
+  const sequence = /<(?:\w+:)?infEvento\b[\s\S]*?<(?:\w+:)?nSeqEvento>(\d+)</.exec(eventXml)?.[1];
+  if (sequence === void 0) return null;
+  const { accessKey, code } = readNfseEventSummary(eventXml);
+  return isAccessKey(accessKey) && code ? { accessKey, code, sequence: Number(sequence) } : null;
+}
 function findKey(node, key) {
   if (!node || typeof node !== "object") return void 0;
   const record = node;
@@ -447,9 +453,8 @@ function decodeNote(gzipB64, httpStatus, accessKey) {
 }
 function decodeEvent(gzipB64, httpStatus, expected) {
   const xml = decode(gzipB64, httpStatus);
-  const event = readNfseEventSummary(xml);
-  const sequence = /<(?:\w+:)?infEvento\b[\s\S]*?<(?:\w+:)?nSeqEvento>(\d+)</.exec(xml)?.[1];
-  if (event.accessKey !== expected.accessKey || event.code !== expected.type || sequence === void 0 || expected.sequence !== void 0 && Number(sequence) !== expected.sequence) {
+  const event = registeredEvent(xml);
+  if (event?.accessKey !== expected.accessKey || event.code !== expected.type || expected.sequence !== void 0 && event.sequence !== expected.sequence) {
     throw new SefinError("unavailable", [], httpStatus);
   }
   return xml;
@@ -1190,7 +1195,7 @@ function interpretDistribution(response) {
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     if (!Array.isArray(json?.LoteDFe)) throw new AdnError("unavailable", [], response.status);
     const batch = json.LoteDFe;
-    const wellShaped = (doc) => isRecord2(doc) && Number.isSafeInteger(Number(doc.NSU)) && Number(doc.NSU) > 0 && typeof doc.TipoDocumento === "string" && doc.TipoDocumento !== "";
+    const wellShaped = (doc) => isRecord2(doc) && (typeof doc.NSU === "number" || typeof doc.NSU === "string" && /^[1-9][0-9]*$/.test(doc.NSU)) && Number.isSafeInteger(Number(doc.NSU)) && Number(doc.NSU) > 0 && typeof doc.TipoDocumento === "string" && doc.TipoDocumento !== "";
     const increasing = (doc, index, docs) => index === 0 || Number(doc.NSU) > Number(docs[index - 1].NSU);
     if (!batch.every(wellShaped) || !batch.every(increasing)) throw new AdnError("unavailable", [], response.status);
     let xmls;
@@ -1201,11 +1206,14 @@ function interpretDistribution(response) {
     }
     return batch.map((doc, index) => {
       const envelopeKey = isAccessKey(doc.ChaveAcesso) ? doc.ChaveAcesso : null;
-      const noteKey = doc.TipoDocumento === "NFSE" ? nfseAccessKey(xmls[index]) : null;
-      if (doc.TipoDocumento === "NFSE" && (!noteKey || envelopeKey && envelopeKey !== noteKey)) {
+      let xmlKey = null;
+      if (doc.TipoDocumento === "NFSE") xmlKey = nfseAccessKey(xmls[index]);
+      if (doc.TipoDocumento === "EVENTO") xmlKey = registeredEvent(xmls[index])?.accessKey ?? null;
+      const keyed = doc.TipoDocumento === "NFSE" || doc.TipoDocumento === "EVENTO";
+      if (keyed && (!xmlKey || envelopeKey && envelopeKey !== xmlKey)) {
         throw new AdnError("unavailable", [], response.status);
       }
-      return { nsu: Number(doc.NSU), accessKey: noteKey ?? envelopeKey, type: doc.TipoDocumento, xml: xmls[index] };
+      return { nsu: Number(doc.NSU), accessKey: xmlKey ?? envelopeKey, type: doc.TipoDocumento, xml: xmls[index] };
     });
   }
   const messages = toMessages2(json?.Erros);

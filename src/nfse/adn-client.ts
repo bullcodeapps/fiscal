@@ -2,7 +2,7 @@ import type https from "node:https";
 import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
 import { gunzipBase64, mtlsAgent, request, type RawResponse } from "./http";
-import { isAccessKey, nfseAccessKey } from "./summary";
+import { isAccessKey, nfseAccessKey, registeredEvent } from "./summary";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://adn.nfse.gov.br/contribuintes",
@@ -76,6 +76,7 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
     // A page that does not match the documented shape is not an answer: never let the cursor skip it.
     const wellShaped = (doc: unknown): doc is Record<string, unknown> =>
       isRecord(doc) &&
+      (typeof doc.NSU === "number" || (typeof doc.NSU === "string" && /^[1-9][0-9]*$/.test(doc.NSU))) &&
       Number.isSafeInteger(Number(doc.NSU)) &&
       Number(doc.NSU) > 0 &&
       typeof doc.TipoDocumento === "string" &&
@@ -92,12 +93,15 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
     }
     return batch.map((doc, index) => {
       const envelopeKey = isAccessKey(doc.ChaveAcesso) ? doc.ChaveAcesso : null;
-      // The key decides which stored note an import updates: for a note, the XML's own Id wins.
-      const noteKey = doc.TipoDocumento === "NFSE" ? nfseAccessKey(xmls[index]) : null;
-      if (doc.TipoDocumento === "NFSE" && (!noteKey || (envelopeKey && envelopeKey !== noteKey))) {
+      // The key decides which stored note an import updates, so it comes from the XML itself.
+      let xmlKey: string | null = null;
+      if (doc.TipoDocumento === "NFSE") xmlKey = nfseAccessKey(xmls[index]);
+      if (doc.TipoDocumento === "EVENTO") xmlKey = registeredEvent(xmls[index])?.accessKey ?? null;
+      const keyed = doc.TipoDocumento === "NFSE" || doc.TipoDocumento === "EVENTO";
+      if (keyed && (!xmlKey || (envelopeKey && envelopeKey !== xmlKey))) {
         throw new AdnError("unavailable", [], response.status);
       }
-      return { nsu: Number(doc.NSU), accessKey: noteKey ?? envelopeKey, type: doc.TipoDocumento as string, xml: xmls[index] };
+      return { nsu: Number(doc.NSU), accessKey: xmlKey ?? envelopeKey, type: doc.TipoDocumento as string, xml: xmls[index] };
     });
   }
   const messages = toMessages(json?.Erros);

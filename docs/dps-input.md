@@ -127,18 +127,13 @@ a B2B service with standard taxation. Confirm `cIndOp`, `CST` and `cClassTrib` f
 
 ## Rules buildDps enforces
 
-`buildDps` throws `Error` before any network call:
+`buildDps` throws `Error` before any network call: the key fields (`cLocEmi`, `prest.CNPJ`, `serie`, `nDPS`), a
+single taker identity, and the foreign taker and export rules (E0223, E0242, E0330, E0590). The complete list of
+messages is in [errors.md](./errors.md#error-builddps).
 
-| Message starts with | Rule |
-| --- | --- |
-| `serv: exactly one of cLocPrestacao or cPaisPrestacao` | Set exactly one of the two. |
-| `toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)` | A foreign taker needs a `ForeignAddress`. |
-| `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF (E0223)` | A `ForeignAddress` needs `NIF` or `cNaoNIF`. |
-| `serv: comExt is required for a taker abroad, a service abroad or an export (E0330)` | Add `serv.comExt` for a foreign taker, `cPaisPrestacao`, or `tribISSQN` 3. |
-| `valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)` | Exports need `valores.cPaisResult`. |
-
-Everything else (code tables, field lengths, municipal rules) is validated by Sefin and comes back as a
-`SefinError` with `kind: "rejected"`. See [errors.md](./errors.md).
+Everything else (code tables, municipal rules, field lengths) is validated by Sefin and comes back as a
+`SefinError` with `kind: "rejected"`. `buildDps` does not cap text lengths, so limit your form fields to the XSD
+(for example `xDescServ` at most 2000 characters) before you call it.
 
 ## Complete inputs
 

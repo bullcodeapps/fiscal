@@ -232,7 +232,8 @@ interface SefinClientOptions {
 }
 /**
  * Sefin Nacional over mTLS: emission, events, reconciliation and NFS-e lookup.
- * Every method throws `SefinError`; see its `kind` for what to do next.
+ * Network and Sefin failures throw `SefinError`; see its `kind` for what to do next. `registerEvent`
+ * throws `Error` when given anything but a `pedRegEvento`.
  * @see docs/integration.md sections 5 to 7
  */
 declare class SefinClient {

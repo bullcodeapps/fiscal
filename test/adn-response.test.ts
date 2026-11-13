@@ -3,11 +3,16 @@ import { describe, expect, it } from "vitest";
 import { AdnError } from "../src/nfse";
 import { interpretDistribution } from "../src/nfse/adn-client";
 
+const EVENT_KEY = "42082032211222333000181000000000000226100953785610";
+const request = (key: string) =>
+  `<pedRegEvento><infPedReg><chNFSe>${key}</chNFSe><nPedRegEvento>001</nPedRegEvento><e101101><cMotivo>1</cMotivo></e101101></infPedReg></pedRegEvento>`;
+const registeredEvent = (key: string) => `<evento><infEvento><nSeqEvento>1</nSeqEvento>${request(key)}</infEvento></evento>`;
+
 // Body shape of GET /contribuintes/DFe/{NSU}?lote=true (LoteDistribuicaoNSUResponse).
 describe("interpretDistribution", () => {
   it("decodes every document of a page", () => {
     const nfseXml = '<NFSe><infNFSe Id="NFS42082031211222333000181000000000011826060000000016"><nNFSe>118</nNFSe></infNFSe></NFSe>';
-    const eventXml = "<evento><infEvento/></evento>";
+    const eventXml = registeredEvent(EVENT_KEY);
     const documents = interpretDistribution({
       status: 200,
       body: JSON.stringify({
@@ -21,7 +26,7 @@ describe("interpretDistribution", () => {
 
     expect(documents).toEqual([
       { nsu: 7, accessKey: "42082031211222333000181000000000011826060000000016", type: "NFSE", xml: nfseXml },
-      { nsu: 8, accessKey: null, type: "EVENTO", xml: eventXml },
+      { nsu: 8, accessKey: EVENT_KEY, type: "EVENTO", xml: eventXml },
     ]);
   });
 
@@ -84,6 +89,15 @@ describe("interpretDistribution", () => {
     { scenario: "a document without its type", docs: [{ NSU: 1, ArquivoXml: gz(10) }] },
     // A crash between two out-of-order documents would move the cursor past the lower one.
     { scenario: "NSUs out of order", docs: [2, 1].map((nsu) => ({ NSU: nsu, TipoDocumento: "EVENTO", ArquivoXml: gz(10) })) },
+    // Number("1e9") is a safe integer: the cursor would jump past every document in between.
+    { scenario: "an NSU in exponent notation", docs: [{ NSU: "1e9", TipoDocumento: "EVENTO", ArquivoXml: gzipSync(registeredEvent(EVENT_KEY)).toString("base64") }] },
+    // A bare request is not a registered event: importing it would cancel a note that was never cancelled.
+    { scenario: "an event that is only the request", docs: [{ NSU: 1, TipoDocumento: "EVENTO", ArquivoXml: gzipSync(request(EVENT_KEY)).toString("base64") }] },
+    {
+      // The importer updates the note the event names; it must be the note the envelope names.
+      scenario: "an event whose envelope key is not the one in its XML",
+      docs: [{ NSU: 1, TipoDocumento: "EVENTO", ChaveAcesso: "4".repeat(50), ArquivoXml: gzipSync(registeredEvent(EVENT_KEY)).toString("base64") }],
+    },
     {
       // The key decides which stored note an import updates.
       scenario: "an NFS-e whose envelope key is not the one in its XML",

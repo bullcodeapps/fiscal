@@ -4,7 +4,7 @@ import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
 import { assertWellFormed } from "../core/xml";
 import { gunzipBase64, mtlsAgent, request, type RawResponse } from "./http";
-import { isAccessKey, nfseAccessKey, readNfseEventSummary } from "./summary";
+import { isAccessKey, nfseAccessKey, readNfseEventSummary, registeredEvent } from "./summary";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://sefin.nfse.gov.br/SefinNacional",
@@ -110,14 +110,11 @@ function decodeNote(gzipB64: string, httpStatus: number, accessKey: string): str
 /** An event Sefin returns must be the one asked for, or it proves nothing. */
 function decodeEvent(gzipB64: string, httpStatus: number, expected: EventRef): string {
   const xml = decode(gzipB64, httpStatus);
-  const event = readNfseEventSummary(xml);
-  // The registered event wraps the request in infEvento with its nSeqEvento; the bare request proves nothing.
-  const sequence = /<(?:\w+:)?infEvento\b[\s\S]*?<(?:\w+:)?nSeqEvento>(\d+)</.exec(xml)?.[1];
+  const event = registeredEvent(xml);
   if (
-    event.accessKey !== expected.accessKey ||
+    event?.accessKey !== expected.accessKey ||
     event.code !== expected.type ||
-    sequence === undefined ||
-    (expected.sequence !== undefined && Number(sequence) !== expected.sequence)
+    (expected.sequence !== undefined && event.sequence !== expected.sequence)
   ) {
     throw new SefinError("unavailable", [], httpStatus);
   }
@@ -209,7 +206,8 @@ export interface SefinClientOptions {
 
 /**
  * Sefin Nacional over mTLS: emission, events, reconciliation and NFS-e lookup.
- * Every method throws `SefinError`; see its `kind` for what to do next.
+ * Network and Sefin failures throw `SefinError`; see its `kind` for what to do next. `registerEvent`
+ * throws `Error` when given anything but a `pedRegEvento`.
  * @see docs/integration.md sections 5 to 7
  */
 export class SefinClient {
