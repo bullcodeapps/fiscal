@@ -1,6 +1,7 @@
 # Errors
 
-Branch on the error class and its `code` / `kind`, never on message text.
+Branch on the error class and its `code` / `kind`, never on message text. This page lists every error the
+library defines. Malformed XML passed to the parsers (`readNfseSummary`, `buildDanfseModel`, ...) throws a plain `Error`.
 
 ## CertificateError (`loadCertificate`)
 
@@ -8,9 +9,12 @@ Branch on the error class and its `code` / `kind`, never on message text.
 
 | `code` | Cause | Fix |
 | --- | --- | --- |
-| `unreadable` | Wrong password, corrupt file, not PKCS#12, file over 64 KB, or key-derivation iterations above 300,000 in total | Ask for the `.pfx` and its password again |
+| `unreadable` | Wrong password, password over 256 characters, corrupt file, not PKCS#12, file over 64 KB, or key-derivation iterations above 300,000 in total | Ask for the `.pfx` and its password again |
 | `missing_key` | The file has the certificate but no private key | Export the full A1 certificate (`.pfx` with key) |
 | `missing_cnpj` | The certificate has no ICP-Brasil CNPJ (OID 2.16.76.1.3.3), for example an e-CPF | Use the company's e-CNPJ A1 |
+
+`loadCertificate` is synchronous. The costliest file it accepts takes about 0.3 s of CPU, so rate-limit uploads
+or call it in a worker thread.
 
 ## Error (`buildDps`)
 
@@ -27,7 +31,7 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 | `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF` | Use `NIF` or `cNaoNIF` instead of `CNPJ` / `CPF` |
 | `serv: tribISSQN 3 (export of services) requires comExt (E0330)` | Add `serv.comExt` |
 | `valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)` | Add `valores.cPaisResult` (usually the taker's country) |
-| `serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF` | Remove `comExt`, or identify the taker by `NIF` / `cNaoNIF` |
+| `serv: comExt requires a taker abroad (NIF or cNaoNIF)` | Remove `comExt`, or identify the taker by `NIF` / `cNaoNIF` |
 
 ## RangeError (`buildCancellation`)
 
@@ -44,9 +48,9 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 
 | Condition | Meaning | Fix |
 | --- | --- | --- |
-| `kind: "rejected"`, a message has code `E0014` | Sefin already holds a note for this `serie` + `nDPS` | Not a rejection: reconcile with `findAccessKeyByDpsId` |
-| `kind: "rejected"` | Sefin answered 4xx with error messages. Nothing was issued (or, for events, registered). | Show `messages`, fix the data, build and sign again with the same `nDPS` |
-| `kind: "unavailable"`, `httpStatus` 401 or 403 | Sefin refused the TLS client certificate. The request was not processed. | Check the certificate (expired, revoked, wrong CNPJ, not enabled for NFS-e). The DPS number is still unused. |
+| Either kind, `httpStatus` 401 or 403 | Sefin refused the TLS client certificate. The request was not processed. | Check the certificate (expired, revoked, wrong CNPJ, not enabled for NFS-e). The DPS number is still unused. |
+| `kind: "rejected"`, a message has code `E0014` | Sefin already holds a note for this `serie` + `nDPS` | Not a rejection: reconcile with `findAccessKeyByDpsId` and check it with `isNfseOfDps` |
+| `kind: "rejected"` (any other case) | Sefin answered 4xx with error messages. Nothing was issued (or, for events, registered). | Show `messages`, fix the data, build and sign again with the same `nDPS` |
 | `kind: "unavailable"`, `httpStatus` undefined | Timeout or network failure. No answer arrived. | Treat the DPS as possibly authorized. Reconcile with `findAccessKeyByDpsId` before resending. |
 | `kind: "unavailable"`, other `httpStatus` | 5xx, or an answer the client could not read: unknown body, malformed gzip or base64, body or decompressed XML over 10 MB | Same as above |
 
@@ -58,7 +62,7 @@ Per method:
 | Method | `rejected` | `unavailable` |
 | --- | --- | --- |
 | `emit` | DPS refused | Note may exist: reconcile |
-| `registerEvent` | Event refused (already cancelled, deadline passed, ...). After an earlier `unavailable`, it can also mean the first attempt went through: confirm with the ADN import | Retry later. Sefin rejects a duplicate event |
+| `registerEvent` | Event refused (already cancelled, deadline passed, ...). After an earlier `unavailable`, it does not prove the event failed: confirm with the ADN import | Retry later. A retry is safe |
 | `findAccessKeyByDpsId` | never (404 returns `null`) | Retry later |
 | `getNfseXml` | 404: no note with this key in this environment. For a key you already stored (just emitted or reconciled), treat it as transient and retry | Retry later |
 
@@ -74,4 +78,4 @@ the DPS has `IBSCBS`.
 | --- | --- | --- |
 | `rate_limited` | HTTP 429 | Stop and resume on the next scheduled run |
 | `rejected` | The ADN refused the query (for example the certificate is not from the queried CNPJ's root) | Check `cnpj` and the certificate |
-| `unavailable` | Timeout, network error, 5xx, an unknown body, malformed gzip or base64, or a body or document over 10 MB | Retry later from the same `lastNsu` |
+| `unavailable` | Timeout, network error, 5xx, an unknown body, a body over 10 MB, a page whose documents decompress to more than 10 MB in total, base64 outside the standard alphabet, malformed gzip, or an NSU that is not a positive integer | Retry later from the same `lastNsu` |

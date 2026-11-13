@@ -16,10 +16,11 @@ public issue. Expect a first answer within 5 business days.
   signed DPS XML, NFS-e XML and event XML as personal data.
 - `loadCertificate` only extracts data. It does not validate the ICP-Brasil chain, so `certificate.cnpj` is not
   proof that the uploader owns the company. Never use it for authorization.
-- `loadCertificate` accepts untrusted `.pfx` files up to 64 KB with at most 300,000 key-derivation iterations
-  in total, so a crafted file cannot block the event loop for long.
-- Responses from Sefin and the ADN are limited to 10 MB, compressed and decompressed. Larger or malformed
-  answers throw `SefinError` / `AdnError` with kind `unavailable`.
+- `loadCertificate` refuses `.pfx` files over 64 KB, passwords over 256 characters and more than 300,000
+  key-derivation iterations in total. It is synchronous: an accepted file can still cost about 0.3 s of CPU, so
+  rate-limit certificate uploads or parse them in a worker thread.
+- Sefin answers are limited to 10 MB, compressed and decompressed. An ADN page is limited to 10 MB of body and
+  10 MB decompressed in total. Larger or malformed answers throw `SefinError` / `AdnError` with kind `unavailable`.
 - XML text values are escaped when the DPS and events are built, and the fields that form `Id` attributes are
   validated (digits, or uppercase letters for a CNPJ). The library does not verify signatures of XML it
   receives; it trusts Sefin and the ADN over TLS.

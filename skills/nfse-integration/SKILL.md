@@ -8,7 +8,7 @@ description: Use when implementing, changing or debugging NFS-e Nacional issuanc
 1. Read `node_modules/@bullcode/fiscal/docs/integration.md` in full before writing code. Prefer it over prior knowledge.
 2. Read `node_modules/@bullcode/fiscal/docs/dps-input.md` to map the app's data to `DpsInput`.
 3. Read `node_modules/@bullcode/fiscal/docs/codes.md` to choose tax codes and to explain Sefin rejections.
-4. Read `node_modules/@bullcode/fiscal/docs/errors.md` and handle every error it lists.
+4. Read `node_modules/@bullcode/fiscal/docs/errors.md` and handle every error it lists (malformed XML passed to the parsers throws a plain `Error`).
 5. Implement against the reference implementation in section 8 of `integration.md`, adapting only the storage.
 6. Go through the checklist at the end of `integration.md` and confirm each item in the code.
 

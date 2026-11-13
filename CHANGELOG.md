@@ -15,6 +15,13 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
 - Sefin and ADN answers over 10 MB (compressed or decompressed), and malformed gzip or base64, throw
   `SefinError` / `AdnError` `unavailable` instead of raw errors.
 - `loadCertificate` refuses files over 64 KB and more than 300,000 key-derivation iterations in total.
+- `isNfseOfDps(nfseXml, signedDpsXml)`: true when a note embeds exactly this signed DPS. Use it after
+  reconciliation.
+- `AdnClient`: one 10 MB decompression budget per page; an NSU must be a positive integer and base64 must use
+  the standard alphabet, else `AdnError` `unavailable`.
+- `loadCertificate` refuses passwords over 256 characters.
+- `buildDps` refuses `comExt` without a taker abroad, also when `toma` is missing.
+- `IbsCbs.indDest` accepts only `0`. **Breaking** for inputs passing `1`, which produced an invalid note anyway.
 - MIT license.
 - node-forge 1.4.3 and fast-xml-parser 5.12.0 (security advisories).
 - Pins pnpm 10 in `packageManager`.

@@ -66,7 +66,7 @@ A production integration also needs persistence, numbering and the retry loop. T
 - [docs/integration.md](./docs/integration.md): end-to-end flow, reference implementation, checklist
 - [docs/dps-input.md](./docs/dps-input.md): every `DpsInput` field, complete inputs for company, person and export
 - [docs/codes.md](./docs/codes.md): where to look up each tax code, municipality adhesion, common Sefin rejections
-- [docs/errors.md](./docs/errors.md): every error and how to fix it
+- [docs/errors.md](./docs/errors.md): every error the library defines and how to fix it
 
 The docs ship inside the package, at `node_modules/@bullcode/fiscal/docs/`.
 

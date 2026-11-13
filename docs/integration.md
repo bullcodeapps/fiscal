@@ -66,7 +66,10 @@ Create the row before you talk to Sefin. Suggested columns:
 | `accessKey` | As soon as Sefin returns it. Never cleared. |
 | `nfseXml` | After authorization (from `emit` or `getNfseXml`) |
 | `status` | `draft`, `issuing`, `authorized`, `rejected`, `unavailable`, `conflict`, `cancelling`, `cancelled` |
-| `lease` | Set by each attempt that claims the row (step 8) |
+| `lease` | Set by each attempt that claims the row (steps 8 and 11) |
+| `cancelReason`, `cancelDescription` | When the user asks to cancel (step 11) |
+| `cancelUncertain` | When a cancellation send ends `unavailable` (step 11) |
+| `cancellationXml` | The event XML Sefin signed back, or the one the ADN import delivered |
 | `messages` | Sefin's `{ code, description }[]` from the last failure |
 
 Rules:
@@ -75,6 +78,8 @@ Rules:
   for life: a rejected DPS created nothing, so the corrected DPS reuses it. Never give a row a new number.
 - `serie` is 5 digits. `00001` to `49999` is the range for the taxpayer's own software.
 - Allow only one attempt per row at a time, and fence stale attempts with a lease (step 8).
+- `signedDpsXml` is the immutable snapshot of what the row sends. Once it is stored, do not change what the row
+  will send. Only a rejected row is rebuilt from current app data.
 
 Security: `signedDpsXml`, `nfseXml` and event XML embed the public certificate, which carries the legal
 representative's CPF and birth date, plus the taker's data. Store them with the same care as customer data.
@@ -119,11 +124,14 @@ See [errors.md](./errors.md) for the full list.
 Run this before any new send of a row that has `sentAt` set and no `accessKey`:
 
 ```ts
+import { isNfseOfDps } from "@bullcode/fiscal/nfse";
+
 const accessKey = await client.findAccessKeyByDpsId(row.dpsId);
 if (accessKey) {
   await save({ accessKey });
   const nfseXml = await client.getNfseXml(accessKey);
-  await save({ nfseXml, status: "authorized" });
+  // The note found by DPS Id must embed exactly this signed DPS.
+  await save({ nfseXml, status: isNfseOfDps(nfseXml, row.signedDpsXml) ? "authorized" : "conflict" });
 } else {
   // Sefin never authorized it: send the SAME signedDpsXml again.
   await save({ sentAt: new Date() });
@@ -135,9 +143,10 @@ if (accessKey) {
 If `findAccessKeyByDpsId` or `getNfseXml` throws, keep the row `unavailable` and try again later. A
 `getNfseXml` 404 (`rejected`) for a key you already stored is transient (the note is still propagating): never
 treat a stored key as a nonexistent note.
-A note found this way must match the row: compare `readNfseSummary(nfseXml)` (provider, taker, value) with the
-intended DPS. A mismatch means the number was used by another DPS (for example a restored counter): set
-`conflict` and show it to a person. Never resend with a new `nDPS`: that creates a duplicate note.
+A note found this way must be this row's note: `isNfseOfDps(nfseXml, row.signedDpsXml)` checks that it embeds
+exactly the stored signed DPS (same Id and same signed digest). False means another DPS used the number (for
+example a restored counter): set `conflict` and show it to a person. Never rebuild the input from current app
+data to compare, and never resend with a new `nDPS`: that creates a duplicate note.
 
 ## 8. Complete reference implementation
 
@@ -147,11 +156,11 @@ Storage-agnostic. Implement `Store` on your database. This is the loop the steps
 import type { Certificate, Environment } from "@bullcode/fiscal";
 import {
   buildDps,
+  isNfseOfDps,
   readNfseSummary,
   SefinClient,
   SefinError,
   signDps,
-  type BuiltDps,
   type DpsInput,
   type SefinMessage,
 } from "@bullcode/fiscal/nfse";
@@ -213,46 +222,19 @@ function failure(e: unknown): Partial<NoteRow> & { status: Status } {
   };
 }
 
-function takerId(input: DpsInput): string | null {
-  const toma = input.toma;
-  if (!toma) return null;
-  if ("CNPJ" in toma) return toma.CNPJ;
-  if ("CPF" in toma) return toma.CPF;
-  return "NIF" in toma ? toma.NIF : null;
-}
-
-/** A note found by reconciliation must be the one this row meant to issue. */
-function matches(nfseXml: string, input: DpsInput): boolean {
-  const note = readNfseSummary(nfseXml);
-  return (
-    note.providerDocument === input.prest.CNPJ &&
-    (note.takerDocument ?? note.takerNif) === takerId(input) &&
-    note.serviceValueCents === Math.round(input.valores.vServ * 100)
-  );
-}
-
 export async function issue(
   store: Store,
   id: string,
   certificate: Certificate,
-  /** Builds the DpsInput from current app data, with `nDPS: row.nDPS`. */
+  /** Builds a NEW DpsInput from current app data, with `nDPS: row.nDPS`. Only called when no signed DPS is stored. */
   inputFor: (row: NoteRow) => DpsInput,
 ): Promise<Status> {
   const lease = await store.claim(id);
   if (!lease) return (await store.load(id)).status;
   const save = (values: Partial<NoteRow>) => store.patch(id, lease, values);
   const row = await store.load(id);
-
-  let input: DpsInput;
-  let dps: BuiltDps | null = null;
-  try {
-    input = inputFor(row);
-    if (!row.signedDpsXml) dps = buildDps(input);
-  } catch (e) {
-    await save({ status: "rejected", messages: [{ code: "LOCAL", description: String(e) }] });
-    return "rejected";
-  }
   const client = new SefinClient({ environment: row.environment, certificate });
+  let signed = row.signedDpsXml;
   let accessKey = row.accessKey;
   let nfseXml: string | null = null;
 
@@ -266,12 +248,17 @@ export async function issue(
     }
   }
 
-  // 2. Send. A pending signed DPS is resent as is.
+  // 2. Send. A stored signed DPS is resent as is; only a new or rejected row builds one.
   if (!accessKey) {
-    let signed = row.signedDpsXml;
     if (!signed) {
-      signed = signDps(dps!.xml, certificate);
-      await save({ dpsId: dps!.id, signedDpsXml: signed, messages: null });
+      try {
+        const dps = buildDps(inputFor(row));
+        signed = signDps(dps.xml, certificate);
+        await save({ dpsId: dps.id, signedDpsXml: signed, messages: null });
+      } catch (e) {
+        await save({ status: "rejected", messages: [{ code: "LOCAL", description: String(e) }] });
+        return "rejected";
+      }
     }
     await save({ sentAt: new Date() });
     try {
@@ -286,14 +273,14 @@ export async function issue(
     await save({ accessKey });
   }
 
-  // 3. Fetch the note when the key came from reconciliation, and check that it is this row's note.
+  // 3. Fetch the note when the key came from reconciliation, and check that it embeds this row's signed DPS.
   try {
     nfseXml ??= await client.getNfseXml(accessKey);
   } catch {
     await save({ status: "unavailable" });
     return "unavailable";
   }
-  if (!matches(nfseXml, input)) {
+  if (!signed || !isNfseOfDps(nfseXml, signed)) {
     await save({ status: "conflict", nfseXml, messages: [{ code: "CONFLICT", description: "Sefin holds another note for this DPS" }] });
     return "conflict";
   }
@@ -330,41 +317,67 @@ const summary = readNfseSummary(nfseXml);
 // serviceValueCents, issqnCents, issqnInSimples, competenceDate, issuedAt, description
 ```
 
-Use it to show the note and to confirm that a note found by reconciliation is the one you meant to issue.
+Use it to show the note. To check that a note found by reconciliation is this row's note, use `isNfseOfDps` (step 7).
 
 ## 11. Cancel
 
-Cancellation can also end with an unknown outcome, so persist the intent before sending:
+Cancellation can also end with an unknown outcome, so it uses the same lease and fenced writes as issuance,
+and a durable flag for the unknown case. The request handler moves the row from `authorized` to `cancelling`
+(compare-and-set) with `cancelReason`, `cancelDescription` and `cancelUncertain: false`. A worker then runs:
 
 ```ts
-import { buildCancellation, SefinError } from "@bullcode/fiscal/nfse";
+import type { Certificate, Environment } from "@bullcode/fiscal";
+import { buildCancellation, SefinClient, SefinError, type CancellationReason, type SefinMessage } from "@bullcode/fiscal/nfse";
 
-/** `isRetry`: an earlier attempt for this note ended `unavailable`. */
-async function cancel(isRetry: boolean) {
-  const reason = 1; // 1 Erro na emissão, 2 Serviço não prestado, 9 Outros
-  const description = "Valor informado incorretamente"; // 15 to 255 characters, else RangeError
-  await save({ status: "cancelling", cancelReason: reason, cancelDescription: description });
+interface CancelRow {
+  environment: Environment;
+  status: "authorized" | "cancelling" | "cancelled";
+  accessKey: string;
+  cancelReason: CancellationReason; // 1 Erro na emissão, 2 Serviço não prestado, 9 Outros
+  cancelDescription: string; // 15 to 255 characters, else RangeError
+  /** True once a send ended `unavailable`: a later rejection may be the duplicate of a registered event. */
+  cancelUncertain: boolean;
+  cancellationXml: string | null;
+  messages: SefinMessage[] | null;
+}
+
+interface CancelStore {
+  load(id: string): Promise<CancelRow>;
+  /** Lease on a "cancelling" row, with the same rules as issuance (a stale lease can be taken over). */
+  claim(id: string): Promise<string | null>;
+  patch(id: string, lease: string, values: Partial<CancelRow>): Promise<void>;
+}
+
+export async function cancel(store: CancelStore, id: string, certificate: Certificate) {
+  const lease = await store.claim(id);
+  if (!lease) return (await store.load(id)).status;
+  const save = (values: Partial<CancelRow>) => store.patch(id, lease, values);
+  const row = await store.load(id);
   const eventXml = buildCancellation(
     {
       environment: row.environment,
       accessKey: row.accessKey,
       authorCnpj: certificate.cnpj,
-      reason,
-      description,
+      reason: row.cancelReason,
+      description: row.cancelDescription,
       verAplic: "my-app-1.0",
       at: new Date(),
     },
     certificate,
   );
   try {
-    const registered = await client.registerEvent(row.accessKey, eventXml);
-    await save({ status: "cancelled", cancellationXml: registered });
+    const registered = await new SefinClient({ environment: row.environment, certificate }).registerEvent(row.accessKey, eventXml);
+    await save({ status: "cancelled", cancellationXml: registered, messages: null });
+    return "cancelled";
   } catch (e) {
     if (!(e instanceof SefinError)) throw e;
-    // A refusal on the first attempt is final. After an `unavailable`, the first attempt may have gone through
-    // (Sefin rejects the duplicate), so the row stays "cancelling" until the ADN import confirms it.
-    if (e.kind === "rejected" && !isRetry) await save({ status: "authorized", messages: e.messages });
-    else await save({ messages: e.messages });
+    const refused = e.httpStatus === 401 || e.httpStatus === 403;
+    if ((e.kind === "rejected" || refused) && !row.cancelUncertain) {
+      await save({ status: "authorized", messages: e.messages });
+      return "authorized";
+    }
+    await save({ cancelUncertain: row.cancelUncertain || !refused, messages: e.messages });
+    return "cancelling";
   }
 }
 ```
@@ -372,9 +385,9 @@ async function cancel(isRetry: boolean) {
 | Outcome | Row |
 | --- | --- |
 | Success | `cancelled`, with the event XML Sefin signed back |
-| `rejected`, first attempt | Back to `authorized`, with the messages. Common causes: already cancelled, or a municipal limit (deadline, default 730 days; value; taxes already paid). See the event codes in [codes.md](./codes.md). |
-| `unavailable` | Stays `cancelling`. Retry later. |
-| `rejected` after an `unavailable` | Stays `cancelling`. The ADN import (step 12) sets `cancelled` when event 101101 arrives. If none arrives within a day, show the row to a person. |
+| `rejected` (or 401/403) and `cancelUncertain` false | Back to `authorized`, with the messages. Common causes: already cancelled, or a municipal limit (deadline, default 730 days; value; taxes already paid). See the event codes in [codes.md](./codes.md). |
+| `unavailable` | Stays `cancelling`, `cancelUncertain` set. Retry later. |
+| `rejected` and `cancelUncertain` true | Stays `cancelling`: the rejection may be the duplicate of an event that went through. The ADN import (step 12) sets `cancelled` when event 101101 arrives. If none arrives within a day, show the row to a person. |
 
 After the municipal deadline, only the taxpayer can ask for análise fiscal in the national portal.
 
@@ -387,18 +400,26 @@ issued outside your app and cancellation events.
 import { AdnClient, type AdnDocument } from "@bullcode/fiscal/nfse";
 
 interface AdnStore {
+  /** Exclusive lock for the importer (an advisory lock or a lease on the cursor); false when another run holds it. */
+  lock(): Promise<boolean>;
+  unlock(): Promise<void>;
   /** The highest NSU applied so far; 0 before the first import. */
   lastNsu(): Promise<number>;
-  /** In ONE transaction: store the document and advance the cursor to `doc.nsu`. */
+  /** In ONE transaction: store the document and move the cursor forward to `doc.nsu`. */
   apply(doc: AdnDocument): Promise<void>;
 }
 
 export async function importFromAdn(store: AdnStore) {
-  const adn = new AdnClient({ environment: "production", cnpj: certificate.cnpj, certificate });
-  for (;;) {
-    const page = await adn.fetchDocuments(await store.lastNsu()); // up to 50, NSU order
-    if (page.length === 0) return;
-    for (const doc of page) await store.apply(doc); // one at a time, in NSU order
+  if (!(await store.lock())) return;
+  try {
+    const adn = new AdnClient({ environment: "production", cnpj: certificate.cnpj, certificate });
+    for (;;) {
+      const page = await adn.fetchDocuments(await store.lastNsu()); // up to 50, NSU order
+      if (page.length === 0) return;
+      for (const doc of page) await store.apply(doc); // one at a time, in NSU order
+    }
+  } finally {
+    await store.unlock();
   }
 }
 ```
@@ -409,9 +430,11 @@ What `apply` does, inside its transaction:
 - `doc.type === "NFSE"`: also upsert the note by `doc.accessKey` with `readNfseSummary(doc.xml)`. A note your app
   issued is already there; one issued elsewhere is new.
 - Any other type: read it with `readNfseEventSummary(doc.xml)`. When its `code` is `"101101"` (cancellation),
-  set the note with that `accessKey` to `cancelled`, from `authorized` or `cancelling`. When `code` is null
-  (not an event), keep the raw XML only. Never fail the import on a type you do not know.
-- Save `doc.nsu` as the cursor. If the transaction fails, the cursor does not move and the next run replays the document.
+  set the note with that `accessKey` to `cancelled`, from `authorized` or `cancelling`, and clear its lease in the
+  same update, so a stale worker's later fenced write fails instead of overwriting `cancelled`. When `code` is
+  null (not an event), keep the raw XML only. Never fail the import on a type you do not know.
+- Move the cursor only forward: `UPDATE ... SET last_nsu = $nsu WHERE last_nsu < $nsu`. If the transaction
+  fails, the cursor does not move and the next run replays the document.
 
 `AdnError.kind`: `rate_limited` (HTTP 429, stop and resume later), `rejected` (the certificate may not query
 this CNPJ), `unavailable` (retry later, also for oversized or malformed answers). Run the import on a schedule,
@@ -441,9 +464,9 @@ to drive each branch of step 6.
 - [ ] Row created and signed DPS saved before the first `emit`
 - [ ] `sentAt` saved before each `emit`, `accessKey` saved alone right after
 - [ ] `rejected` (except E0014), certificate refusal and `unavailable` handled as in step 6
-- [ ] Reconciliation by `dpsId` before any resend, with the found note checked against the row
+- [ ] Reconciliation by `dpsId` before any resend, with `isNfseOfDps(nfseXml, row.signedDpsXml)` on the found note
 - [ ] One attempt per row at a time, every write fenced by the attempt's lease
 - [ ] `nfseXml` stored as personal data; DANFSe rendered from it
-- [ ] Cancellation persisted as `cancelling` before sending, confirmed by the ADN import when the outcome is unknown
-- [ ] ADN import writes each document and its cursor in one transaction
+- [ ] Cancellation persisted as `cancelling` before sending, fenced by a lease, with a durable `cancelUncertain` flag
+- [ ] ADN import: one runner at a time, each document and a forward-only cursor in one transaction, events clear the row's lease
 - [ ] Environment stored per note and used for queries and cancellation

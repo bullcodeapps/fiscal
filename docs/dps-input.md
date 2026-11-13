@@ -6,7 +6,8 @@ maps to the Anexo I / VI spreadsheets at https://www.gov.br/nfse/pt-br/bibliotec
 Conventions:
 
 - Codes are strings of digits with no dots or dashes (`cTribNac: "170303"`, not `"17.03.03"`).
-- Money is a number in reais (`vServ: 1500.5`). The XML gets two decimals.
+- Money is a number in reais with at most 2 decimals (`vServ: 1500.5`). Keep amounts as integer cents in the
+  app and pass `cents / 100`.
 - Omit an optional field instead of passing `undefined` or `""`.
 
 ## Top level
@@ -72,7 +73,7 @@ Always send it.
 | `cTribMun` | `string` | Optional. Municipal tax code, 3 digits, when the municipality defines one. |
 | `cNBS` | `string` | NBS, 9 digits. Required whenever the DPS has `IBSCBS` (E0322). |
 | `xDescServ` | `string` | Free text description shown on the note. |
-| `comExt` | `ForeignTrade` | Export of services only. See below. |
+| `comExt` | `ForeignTrade` | Export of services only, and only with a taker abroad (`NIF` or `cNaoNIF`). See below. |
 
 ### serv.comExt (ForeignTrade)
 
@@ -116,7 +117,7 @@ subject to sanctions. Send `IBSCBS` whenever the issuer is in one of the groups 
 | --- | --- | --- |
 | `indFinal` | `0 \| 1` | 1 when the taker is the final consumer. |
 | `cIndOp` | `string` | Operation indicator code (Anexo VII). |
-| `indDest` | `0 \| 1` | 0 the taker is the recipient, 1 someone else is. |
+| `indDest` | `0` | The taker is the recipient. Only `0` is supported: the group for a different recipient is not built yet. |
 | `bensMoveis` | `MovableGood[]` | Required for `cTribNac` 99.04.01 (rental of movable goods): `{ cNCMBemMovel, xNCMBemMovel, qtdNCMBemMovel }`. |
 | `CST` | `string` | Tax situation code, 3 digits. |
 | `cClassTrib` | `string` | Tax classification code, 6 digits. |
@@ -135,7 +136,7 @@ a B2B service with standard taxation. Confirm `cIndOp`, `CST` and `cClassTrib` f
 | `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF` | A `ForeignAddress` needs `NIF` or `cNaoNIF`. |
 | `serv: tribISSQN 3 (export of services) requires comExt (E0330)` | Exports need `serv.comExt`. |
 | `valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)` | Exports need `valores.cPaisResult`. |
-| `serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF` | `comExt` only with a foreign taker. |
+| `serv: comExt requires a taker abroad (NIF or cNaoNIF)` | `comExt` only with a foreign taker, never without `toma`. |
 
 Everything else (code tables, field lengths, municipal rules) is validated by Sefin and comes back as a
 `SefinError` with `kind: "rejected"`. See [errors.md](./errors.md).

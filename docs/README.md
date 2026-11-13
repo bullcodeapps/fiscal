@@ -11,12 +11,12 @@ Read in this order:
    for a company, a person and an export.
 3. [codes.md](./codes.md): where to look up every tax code (`cTribNac`, `cNBS`, `cIndOp`, `cClassTrib`,
    currency, country, IBGE), municipality adhesion, and the common Sefin rejection codes with fixes.
-4. [errors.md](./errors.md): every error the package throws, what it means and how to fix it.
+4. [errors.md](./errors.md): every error the library defines, what it means and how to fix it.
 
 Entry points:
 
 - `@bullcode/fiscal`: `loadCertificate`, `CertificateError`, `signEnveloped`, `findMunicipalityCode`, `findMunicipality`
 - `@bullcode/fiscal/nfse`: `buildDps`, `dpsId`, `signDps`, `SefinClient`, `SefinError`, `buildCancellation`,
-  `renderDanfse`, `buildDanfseModel`, `readNfseSummary`, `readNfseEventSummary`, `AdnClient`, `AdnError`
+  `renderDanfse`, `buildDanfseModel`, `readNfseSummary`, `readNfseEventSummary`, `isNfseOfDps`, `AdnClient`, `AdnError`
 
 The `.d.ts` files carry TSDoc on the input fields and code tables.
