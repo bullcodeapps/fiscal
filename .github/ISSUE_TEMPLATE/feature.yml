@@ -1,0 +1,11 @@
+name: Feature request
+description: A fiscal document, field or flow the library does not support yet
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you need
+      description: The scenario, and the official layout or technical note that defines it (Anexo, NT, code).
+    validations:
+      required: true

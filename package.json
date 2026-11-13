@@ -1,7 +1,6 @@
 {
   "name": "@bullcode/fiscal",
-  "version": "0.3.3",
-  "private": true,
+  "version": "0.3.4",
   "description": "Brazilian fiscal documents: NFS-e Nacional emission (DPS build, XMLDSig signing, Sefin mTLS client)",
   "keywords": [
     "nfse",
@@ -18,6 +17,8 @@
     "type": "git",
     "url": "git+https://github.com/bullcodeapps/fiscal.git"
   },
+  "homepage": "https://github.com/bullcodeapps/fiscal/tree/main/docs",
+  "bugs": "https://github.com/bullcodeapps/fiscal/issues",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.34.9",
@@ -61,11 +62,15 @@
     "docs",
     "CHANGELOG.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check:docs": "tsup && node scripts/check-docs.mjs"
+    "check:docs": "tsup && node scripts/check-docs.mjs",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm check:docs"
   },
   "dependencies": {
     "fast-xml-parser": "^5.12.0",

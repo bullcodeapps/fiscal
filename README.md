@@ -1,5 +1,10 @@
 # @bullcode/fiscal
 
+[![CI](https://github.com/bullcodeapps/fiscal/actions/workflows/ci.yml/badge.svg)](https://github.com/bullcodeapps/fiscal/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@bullcode/fiscal)](https://www.npmjs.com/package/@bullcode/fiscal)
+[![skills.sh](https://skills.sh/b/bullcodeapps/fiscal)](https://skills.sh/bullcodeapps/fiscal)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+
 Brazilian fiscal documents for Node.js (>= 20.11, ESM and CommonJS). Today it issues NFS-e Nacional directly
 against Sefin Nacional, with no intermediary and no per-note fee: it loads the A1 e-CNPJ certificate, builds and
 signs the DPS, emits over mTLS, reconciles after timeouts, cancels, imports notes from the ADN and renders the
@@ -11,10 +16,10 @@ DANFSe PDF. The library is stateless: storage of certificates, DPS numbering and
 ## Install
 
 ```sh
-pnpm add github:bullcodeapps/fiscal#v0.3.3
+pnpm add @bullcode/fiscal   # or: npm install @bullcode/fiscal
 ```
 
-`dist` is committed, so installs never build.
+Releases and changes: [npm](https://www.npmjs.com/package/@bullcode/fiscal), [CHANGELOG.md](./CHANGELOG.md).
 
 ## Quick start
 
@@ -61,7 +66,7 @@ A production integration also needs persistence, numbering and the retry loop. T
 - [docs/codes.md](./docs/codes.md): where to look up each tax code, municipality adhesion, common Sefin rejections
 - [docs/errors.md](./docs/errors.md): every error the library defines and how to fix it
 
-The docs ship inside the package, at `node_modules/@bullcode/fiscal/docs/`.
+The docs ship inside the package, at `node_modules/@bullcode/fiscal/docs/`, and always match the installed version.
 
 ## Using with AI coding agents
 
@@ -80,7 +85,8 @@ installed version, in this order, and prefer them over prior knowledge:
 4. node_modules/@bullcode/fiscal/docs/errors.md
 ```
 
-Agents that support [Agent Skills](https://agentskills.io) can also install the skill in `skills/nfse-integration`:
+Agents that support [Agent Skills](https://agentskills.io) can also install the skill in `skills/nfse-integration`
+([skills.sh](https://skills.sh/bullcodeapps/fiscal/nfse-integration)):
 
 ```sh
 npx skills add bullcodeapps/fiscal
@@ -92,7 +98,7 @@ npx skills add bullcodeapps/fiscal
 pnpm install
 pnpm typecheck
 pnpm test
-pnpm build      # run and commit dist before tagging a release
+pnpm build
 ```
 
 `packageManager` pins pnpm 10. See [AGENTS.md](./AGENTS.md) for contributor notes.
@@ -117,6 +123,11 @@ pnpm build && node scripts/smoke-restricted.mjs cert.pfx password.txt          #
 pnpm build && node scripts/smoke-export-restricted.mjs cert.pfx password.txt   # foreign taker
 pnpm build && node scripts/cancel-restricted.mjs cert.pfx password.txt <accessKey>
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) and the [Code of Conduct](./CODE_OF_CONDUCT.md). Report security
+problems privately, as [SECURITY.md](./SECURITY.md) describes.
 
 ## License
 

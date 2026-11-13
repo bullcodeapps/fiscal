@@ -6,3 +6,4 @@ node_modules
 password*.txt
 .env*
 .doc-snippets/
+dist
