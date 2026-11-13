@@ -20,6 +20,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm check:docs   # type-checks every ts block in README.md and docs/ against dist
 ```
 
 ## Releases
@@ -36,7 +37,7 @@ pnpm build
   The XSD copies drop the `^…$` pattern anchors, which libxml2 would read as literal characters.
 - `test/dps.test.ts` compares builder output with DPS bodies that produção restrita authorized (`test/fixtures/accepted-*.xml`).
 - `test/make-pfx.ts` generates throwaway e-CNPJ certificates for signing tests.
-- The fixtures are anonymized (fake provider CNPJ `11222333000181`, fake address and contact) and their
+- The fixtures are anonymized (the common example CNPJ `11222333000181`, fake address and contact) and their
   `<Signature>` elements were removed. Nothing verifies fixture signatures.
 
 ## Rules

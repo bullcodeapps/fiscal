@@ -1,0 +1,21 @@
+// Names the doc snippets use without declaring them (values from earlier steps of the guide).
+type F = typeof import("@bullcode/fiscal");
+type N = typeof import("@bullcode/fiscal/nfse");
+declare const certificate: import("@bullcode/fiscal").Certificate;
+declare const password: string;
+declare const input: import("@bullcode/fiscal/nfse").DpsInput;
+declare const companyInput: import("@bullcode/fiscal/nfse").DpsInput;
+declare const client: import("@bullcode/fiscal/nfse").SefinClient;
+declare const nfseXml: string;
+declare const row: { environment: import("@bullcode/fiscal").Environment; accessKey: string; dpsId: string; signedDpsXml: string };
+declare function save(values: object): Promise<void>;
+declare function loadLastNsu(): Promise<number>;
+declare function saveLastNsu(n: number): Promise<void>;
+declare function upsertNote(summary: unknown, xml: string): void;
+declare function applyEvent(summary: unknown): void;
+declare const cLocEmi: string, CNPJ: string, serie: string, nDPS: string;
+declare const loadCertificate: F["loadCertificate"], findMunicipalityCode: F["findMunicipalityCode"];
+declare const buildDps: N["buildDps"], signDps: N["signDps"], dpsId: N["dpsId"], SefinClient: N["SefinClient"], SefinError: N["SefinError"];
+declare const renderDanfse: N["renderDanfse"], buildDanfseModel: N["buildDanfseModel"], readNfseSummary: N["readNfseSummary"], buildCancellation: N["buildCancellation"];
+type DpsInput = import("@bullcode/fiscal/nfse").DpsInput;
+declare const isNfseOfDps: N["isNfseOfDps"];

@@ -27,8 +27,12 @@ interface Provider {
     regTrib: {
         /** 1 Não optante, 2 MEI, 3 ME/EPP, 4 Pendente. */
         opSimpNac: 1 | 2 | 3 | 4;
-        /** Required when opSimpNac = 3. */
+        /**
+         * Required when opSimpNac = 3. 1 federal taxes and ISSQN in the SN, 2 federal in the SN and ISSQN by the
+         * municipality, 3 both outside the SN (a sublimit or limit was exceeded).
+         */
         regApTribSN?: 1 | 2 | 3;
+        /** 0 Nenhum, 1 Ato cooperado, 2 Estimativa, 3 Microempresa municipal, 4 Notário ou registrador, 5 Profissional autônomo, 6 Sociedade de profissionais, 9 Outros. */
         regEspTrib: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9;
     };
 }
@@ -60,7 +64,7 @@ type ForeignTaker = TakerBase & (
 type Taker = NationalTaker | ForeignTaker;
 /** Comércio exterior group (export of services). Codes follow tiposSimples_v1.01.xsd. */
 interface ForeignTrade {
-    /** 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas (Sefin rejects 0, E0333). */
+    /** 1 Transfronteiriço, 2 Consumo no Brasil, 3 Movimento temporário de pessoas físicas, 4 Consumo no exterior (Sefin rejects 0, E0333). */
     mdPrestacao: 1 | 2 | 3 | 4;
     /** 0 Sem vínculo, 1 Controlada, 2 Controladora, 3 Coligada, 4 Matriz, 5 Filial, 6 Outro, 9 Desconhecido. */
     vincPrest: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9;

@@ -39,8 +39,8 @@ Conventions:
 | `CNPJ` | `string` | 14 digits or uppercase letters (alphanumeric CNPJ), no mask. Must equal `certificate.cnpj`. Only produção restrita (NT 009 schema) accepts an alphanumeric CNPJ today: the produção schema in force (`nfse-esquemas_xsd-v1-01-20260209`) is digits only, so such a provider cannot issue in produção until NT 009 is deployed there. |
 | `IM` | `string` | Optional. Municipal registration, when the municipality requires it. |
 | `regTrib.opSimpNac` | `1 \| 2 \| 3 \| 4` | 1 Não optante, 2 MEI, 3 ME/EPP (Simples Nacional), 4 Pendente. |
-| `regTrib.regApTribSN` | `1 \| 2 \| 3` | Required when `opSimpNac` is 3. 1: ISSQN paid inside the Simples Nacional DAS. |
-| `regTrib.regEspTrib` | `0 \| 1 \| 2 \| 3 \| 4 \| 5 \| 6 \| 9` | Special regime. 0 none. |
+| `regTrib.regApTribSN` | `1 \| 2 \| 3` | Required when `opSimpNac` is 3. 1 federal taxes and ISSQN in the Simples Nacional; 2 federal taxes in the SN, ISSQN by the municipality's rules; 3 both outside the SN (the company exceeded a sublimit or limit). |
+| `regTrib.regEspTrib` | `0 \| 1 \| 2 \| 3 \| 4 \| 5 \| 6 \| 9` | Municipal special regime: 0 Nenhum, 1 Ato cooperado (cooperativa), 2 Estimativa, 3 Microempresa municipal, 4 Notário ou registrador, 5 Profissional autônomo, 6 Sociedade de profissionais, 9 Outros. |
 
 ## toma (Taker)
 
@@ -85,12 +85,12 @@ address of a Brazilian taker always is the simple safe choice; a taker abroad ne
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `mdPrestacao` | `1..4` | 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas (Sefin rejects 0, E0333). Remote software work is usually 1. |
-| `vincPrest` | `0..6 \| 9` | Link between provider and taker. 0 Sem vínculo. |
+| `mdPrestacao` | `1..4` | 1 Transfronteiriço, 2 Consumo no Brasil, 3 Movimento temporário de pessoas físicas, 4 Consumo no exterior (Sefin rejects 0, E0333). Remote software work is usually 1. |
+| `vincPrest` | `0..6 \| 9` | Link between provider and taker: 0 Sem vínculo, 1 Controlada, 2 Controladora, 3 Coligada, 4 Matriz, 5 Filial ou sucursal, 6 Outro vínculo, 9 Desconhecido. |
 | `tpMoeda` | `string` | BACEN currency code, 3 digits. `"220"` USD, `"978"` EUR. |
 | `vServMoeda` | `number` | Service value in that currency. |
-| `mecAFComexP` | `string` | Provider's support mechanism, 2 digits. `"01"` none. |
-| `mecAFComexT` | `string` | Taker's support mechanism, 2 digits. `"01"` none. |
+| `mecAFComexP` | `string` | Provider's support mechanism, 2 digits: 01 Nenhum, 02 ACC, 03 ACE, 04 BNDES-Exim Pós-Embarque, 05 BNDES-Exim Pré-Embarque, 06 FGE, 07 PROEX Equalização, 08 PROEX Financiamento. |
+| `mecAFComexT` | `string` | Taker's support mechanism, 2 digits: `"01"` Nenhum. 02 to 26 are listed in Anexo I, field `mecAFComexT` (for example 14 Promoção de serviços no exterior, 24 Royalties e assistência técnica, 26 ZPE). |
 | `movTempBens` | `1` | Not linked to a temporary movement of goods. 2 and 3 need declaration numbers and are not supported yet. |
 | `mdic` | `0 \| 1` | 0 do not send to MDIC, 1 send. |
 

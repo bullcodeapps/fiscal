@@ -15,6 +15,7 @@ that is not an NFS-e. `readNfseEventSummary` does not: for a well-formed documen
 | Message | Fix |
 | --- | --- |
 | `registerEvent: signedEventXml is not a pedRegEvento (use buildCancellation)` | Pass the output of `buildCancellation` |
+| `registerEvent: accessKey is not the chNFSe of signedEventXml` | Pass the same key you gave `buildCancellation` |
 
 ## CertificateError (`loadCertificate`)
 
@@ -68,7 +69,7 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 | `kind: "rejected"`, a message has code `E0014` | Sefin already holds a note for this `serie` + `nDPS` | Not a rejection: reconcile with `findAccessKeyByDpsId` and check it with `isNfseOfDps` |
 | `kind: "rejected"` (any other case) | Sefin answered 4xx with error messages. On `emit`, nothing was issued. On `registerEvent`, this request was refused, but an earlier send or another event may have cancelled the note: check with `findEvent` before treating it as final | Show `messages`, fix the data, build and sign again with the same `nDPS` |
 | `kind: "unavailable"`, `httpStatus` undefined | Timeout or network failure. No answer arrived. | Treat the DPS as possibly authorized. Reconcile with `findAccessKeyByDpsId` before resending. |
-| `kind: "unavailable"`, other `httpStatus` | 5xx, or an answer the client could not trust: unknown body, malformed gzip, base64 or UTF-8, body or decompressed XML over 10 MB, NFS-e XML that is not well-formed, an access key that is not a valid chave or differs from the note's own `infNFSe` Id, an event that is not well-formed, not the registered `infEvento`, for another access key, event type or sequence, or a 404 that is not Sefin's error JSON (for example a gateway page) | Same as above |
+| `kind: "unavailable"`, other `httpStatus` | 5xx, or an answer the client could not trust: unknown body, malformed gzip, base64 or UTF-8, body or decompressed XML over 10 MB, NFS-e XML that is not well-formed, an access key that is not a valid chave or differs from the note's own `infNFSe` Id, an event that is not well-formed, not the registered `infEvento`, for another access key, event type or sequence, or, for `findEvent` and `findAccessKeyByDpsId`, a 404 that is not Sefin's error JSON (for example a gateway page). `getNfseXml` reports every 404 as `rejected` | Same as above |
 
 `timeoutMs` (default 30000) is an inactivity timeout: the request fails when the connection stays idle that long.
 It is not a total deadline.

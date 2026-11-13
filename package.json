@@ -64,7 +64,8 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:docs": "node scripts/check-docs.mjs"
   },
   "dependencies": {
     "fast-xml-parser": "^5.12.0",

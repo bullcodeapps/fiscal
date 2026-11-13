@@ -331,7 +331,8 @@ const cancelledPdf = await renderDanfse(nfseXml, { situation: "cancelled" }); //
 
 Render from the stored `nfseXml` at any time and re-render on demand. The XML does not say whether the note was
 later cancelled or replaced, so pass `situation` from the row's status: `"cancelled"` for `cancelled` and
-`"substituted"` for `substituted` (NT 008 requires the watermark). `buildDanfseModel(nfseXml,
+`"substituted"` for `substituted` (NT 008 requires the watermark). While a row is `cancelling` the outcome is
+unknown: run the cancel worker (step 11) first, and do not hand out a DANFSe without a watermark until it settles. `buildDanfseModel(nfseXml,
 options)` returns the same content as data, for a custom layout.
 
 ## 10. Read a note
@@ -390,7 +391,7 @@ const CANCELLATION = "101101";
 const CANCELLING_EVENTS = ["101101", "105102", "105104", "305101"];
 
 /** The registered event that cancelled the note, if any. Throws SefinError when Sefin cannot answer. */
-async function findCancellation(client: CancelClient, accessKey: string): Promise<string | null> {
+export async function findCancellation(client: CancelClient, accessKey: string): Promise<string | null> {
   for (const type of CANCELLING_EVENTS) {
     const found = await client.findEvent(accessKey, type);
     if (found) return found;
@@ -484,6 +485,12 @@ async function send(store: CancelStore, id: string, lease: string, client: Cance
 | `unavailable`, 401/403, or `findEvent` fails | Stays `cancelling`, with the messages. Retry later. On 401/403 the stored request is signed with the refused certificate: replace the certificate, then call `requestCancel` again with it. The event Id does not change, so `findEvent` still finds an earlier send. |
 
 After the municipal deadline, only the taxpayer can ask for análise fiscal in the national portal.
+
+A person can also cancel or replace a note in the national portal, and the ADN does not send the issuer its own
+cancellation (step 12). So the app can still show an `authorized` note that Sefin already cancelled. Check with
+`findCancellation(client, row.accessKey)` (above) before you present a note as valid or render it without a
+watermark, and on a schedule for `authorized` notes inside the municipal cancellation window. When it returns an
+event, set the row as `cancelled` does in the worker (`substituted` for 105102).
 
 ## 12. Import notes from the ADN
 
@@ -599,6 +606,7 @@ For unit tests in your app, pass a fake to `issue` (`IssueClient`) and `cancel` 
 - [ ] One attempt per row at a time, every write fenced by the attempt's lease
 - [ ] `nfseXml` stored as personal data; DANFSe rendered from it, with `situation` for a cancelled or substituted note
 - [ ] `issued.alerts` logged
+- [ ] `authorized` notes checked with `findEvent` for cancellations made in the national portal
 - [ ] Cancellation validated with `buildCancellation` at request time and started with one atomic `requestCancellation`; `cancelSentAt` persisted before each send; `findEvent` before any resend or final rejection
 - [ ] ADN import: cursor and lease per (environment, CNPJ), one runner at a time, each document and a forward-only cursor in one transaction fenced by that lease; any cancelling event (101101, 105102, 105104, 305101) sets `cancelled` (`substituted` for 105102) and clears the note's lease; own notes found by `accessKey` or `dpsId`; never the only confirmation of the app's own notes or cancellations
 - [ ] Environment stored per note and used for queries and cancellation
