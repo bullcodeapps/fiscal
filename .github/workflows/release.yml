@@ -27,7 +27,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - name: Read version
         id: version
@@ -41,6 +40,10 @@ jobs:
           fi
 
       - run: pnpm install --frozen-lockfile
+        if: steps.version.outputs.published == 'false'
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@^11.5.1
         if: steps.version.outputs.published == 'false'
 
       # prepublishOnly runs typecheck, tests and check:docs (which builds dist).
