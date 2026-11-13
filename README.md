@@ -1,5 +1,9 @@
 # @bullcode/fiscal
 
+[![npm](https://img.shields.io/npm/v/@bullcode/fiscal)](https://www.npmjs.com/package/@bullcode/fiscal)
+[![skills.sh](https://skills.sh/b/bullcodeapps/fiscal)](https://skills.sh/bullcodeapps/fiscal)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+
 Brazilian fiscal documents for Node.js (>= 20.11, ESM and CommonJS). Today it issues NFS-e Nacional directly
 against Sefin Nacional, with no intermediary and no per-note fee: it loads the A1 e-CNPJ certificate, builds and
 signs the DPS, emits over mTLS, reconciles after timeouts, cancels, imports notes from the ADN and renders the
@@ -11,8 +15,10 @@ DANFSe PDF. The library is stateless: storage of certificates, DPS numbering and
 ## Install
 
 ```sh
-pnpm add @bullcode/fiscal
+pnpm add @bullcode/fiscal   # or: npm install @bullcode/fiscal
 ```
+
+Releases and changes: [npm](https://www.npmjs.com/package/@bullcode/fiscal), [CHANGELOG.md](./CHANGELOG.md).
 
 ## Quick start
 
@@ -59,7 +65,7 @@ A production integration also needs persistence, numbering and the retry loop. T
 - [docs/codes.md](./docs/codes.md): where to look up each tax code, municipality adhesion, common Sefin rejections
 - [docs/errors.md](./docs/errors.md): every error the library defines and how to fix it
 
-The docs ship inside the package, at `node_modules/@bullcode/fiscal/docs/`.
+The docs ship inside the package, at `node_modules/@bullcode/fiscal/docs/`, and always match the installed version.
 
 ## Using with AI coding agents
 
@@ -78,7 +84,8 @@ installed version, in this order, and prefer them over prior knowledge:
 4. node_modules/@bullcode/fiscal/docs/errors.md
 ```
 
-Agents that support [Agent Skills](https://agentskills.io) can also install the skill in `skills/nfse-integration`:
+Agents that support [Agent Skills](https://agentskills.io) can also install the skill in `skills/nfse-integration`
+([skills.sh](https://skills.sh/bullcodeapps/fiscal/nfse-integration)):
 
 ```sh
 npx skills add bullcodeapps/fiscal
