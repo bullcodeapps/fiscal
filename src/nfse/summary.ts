@@ -101,3 +101,14 @@ export function isNfseOfDps(nfseXml: string, signedDpsXml: string): boolean {
   const dps = DPS_DIGEST.exec(signedDpsXml);
   return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
 }
+
+const ACCESS_KEY = /^[0-9A-Z]{50}$/;
+const NFSE_ID = /<(?:\w+:)?infNFSe\b[^>]*\bId="NFS([0-9A-Z]{50})"/;
+
+/** A chave de acesso: 50 digits, or digits and uppercase letters with an alphanumeric CNPJ. */
+export const isAccessKey = (value: unknown): value is string => typeof value === "string" && ACCESS_KEY.test(value);
+
+/** The access key in the note's own `infNFSe/@Id`, or null. */
+export function nfseAccessKey(nfseXml: string): string | null {
+  return NFSE_ID.exec(nfseXml)?.[1] ?? null;
+}

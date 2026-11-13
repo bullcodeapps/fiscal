@@ -1,7 +1,13 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { SefinError } from "../src/nfse";
-import { interpretEmission, interpretEvent, interpretEventLookup } from "../src/nfse/sefin-client";
+import {
+  interpretDpsLookup,
+  interpretEmission,
+  interpretEvent,
+  interpretEventLookup,
+  interpretNfseLookup,
+} from "../src/nfse/sefin-client";
 
 // Response bodies follow what Sefin produção restrita returned on 2026-10-26.
 const KEY = "42082032211222333000181000000000000126104513068510";
@@ -21,7 +27,7 @@ const expectUnavailable = (call: () => unknown) => {
 };
 describe("interpretEmission", () => {
   it("decodes the authorized NFS-e", () => {
-    const nfseXml = "<NFSe><infNFSe><nNFSe>1</nNFSe></infNFSe></NFSe>";
+    const nfseXml = `<NFSe><infNFSe Id="NFS${KEY}"><nNFSe>1</nNFSe></infNFSe></NFSe>`;
     const result = interpretEmission({
       status: 201,
       body: JSON.stringify({
@@ -158,6 +164,8 @@ describe("interpretEventLookup", () => {
   // An unknown answer must never read as "no event": the caller would resend or revert a cancellation.
   it.each([
     { scenario: "a 404 page from a gateway", response: { status: 404, body: "<html>Not Found</html>" } },
+    { scenario: "a JSON 404 from a gateway", response: { status: 404, body: JSON.stringify({ message: "Not Found" }) } },
+    { scenario: "the cancellation request instead of the registered event", response: { status: 200, body: JSON.stringify({ eventoXmlGZipB64: gz(eventXmlFor(KEY).replace(/^<evento><infEvento[^>]*><nSeqEvento>1<\/nSeqEvento>/, "").replace("</infEvento></evento>", "")) }) } },
     { scenario: "a 200 without the event", response: { status: 200, body: "{}" } },
     { scenario: "a 200 with another note's event", response: { status: 200, body: JSON.stringify({ eventoXmlGZipB64: gz(eventXmlFor(KEY, "105102")) }) } },
     { scenario: "a server error", response: { status: 502, body: "" } },
@@ -177,3 +185,33 @@ describe("malformed bodies", () => {
     );
   });
 });
+
+describe("access key identity", () => {
+  const nfse = (key: string) => gz(`<NFSe><infNFSe Id="NFS${key}"><nNFSe>1</nNFSe></infNFSe></NFSe>`);
+  const OTHER = "42082032211222333000181000000000000126104513068519";
+
+  // The stored key drives every later lookup and the cancellation; it must be the note's own.
+  it.each([
+    { scenario: "a key that is not the note's", body: { chaveAcesso: OTHER, nfseXmlGZipB64: nfse(KEY) } },
+    { scenario: "a malformed key", body: { chaveAcesso: "junk", nfseXmlGZipB64: nfse("junk") } },
+    {
+      scenario: "XML that is not valid UTF-8",
+      body: { chaveAcesso: KEY, nfseXmlGZipB64: gzipSync(Buffer.concat([Buffer.from(`<NFSe><infNFSe Id="NFS${KEY}"><x>`), Buffer.from([0xff]), Buffer.from("</x></infNFSe></NFSe>")])).toString("base64") },
+    },
+  ])("treats an authorization with $scenario as unavailable", ({ body }) => {
+    expectUnavailable(() => interpretEmission({ status: 201, body: JSON.stringify(body) }));
+  });
+
+  it("treats a looked-up note of another key as unavailable", () => {
+    expectUnavailable(() => interpretNfseLookup({ status: 200, body: JSON.stringify({ nfseXmlGZipB64: nfse(OTHER) }) }, KEY));
+  });
+
+  it("returns the looked-up note when it carries the requested key", () => {
+    expect(interpretNfseLookup({ status: 200, body: JSON.stringify({ nfseXmlGZipB64: nfse(KEY) }) }, KEY)).toContain(`NFS${KEY}`);
+  });
+
+  it("treats a DPS lookup answering a malformed key as unavailable", () => {
+    expectUnavailable(() => interpretDpsLookup({ status: 200, body: JSON.stringify({ chaveAcesso: "junk" }) }));
+  });
+});
+

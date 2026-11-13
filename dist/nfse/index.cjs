@@ -282,6 +282,7 @@ var import_node_https = __toESM(require("https"), 1);
 var import_node_zlib = require("zlib");
 var MAX_BYTES = 10 * 1024 * 1024;
 var BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+var UTF8 = new TextDecoder("utf-8", { fatal: true });
 function gunzipBase64(...values) {
   let budget = MAX_BYTES;
   return values.map((value) => {
@@ -289,7 +290,7 @@ function gunzipBase64(...values) {
     const xml = (0, import_node_zlib.gunzipSync)(Buffer.from(value, "base64"), { maxOutputLength: Math.max(budget, 1) });
     budget -= xml.length;
     if (budget < 0) throw new Error("decompressed output above size cap");
-    return xml.toString("utf8");
+    return UTF8.decode(xml);
   });
 }
 function mtlsAgent(certificate) {
@@ -384,6 +385,12 @@ function isNfseOfDps(nfseXml, signedDpsXml) {
   const dps = DPS_DIGEST.exec(signedDpsXml);
   return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
 }
+var ACCESS_KEY = /^[0-9A-Z]{50}$/;
+var NFSE_ID = /<(?:\w+:)?infNFSe\b[^>]*\bId="NFS([0-9A-Z]{50})"/;
+var isAccessKey = (value) => typeof value === "string" && ACCESS_KEY.test(value);
+function nfseAccessKey(nfseXml) {
+  return NFSE_ID.exec(nfseXml)?.[1] ?? null;
+}
 
 // src/nfse/sefin-client.ts
 var BASE_URLS = {
@@ -433,10 +440,16 @@ function decode(gzipB64, httpStatus) {
     throw new SefinError("unavailable", [], httpStatus);
   }
 }
+function decodeNote(gzipB64, httpStatus, accessKey) {
+  const xml = decode(gzipB64, httpStatus);
+  if (nfseAccessKey(xml) !== accessKey) throw new SefinError("unavailable", [], httpStatus);
+  return xml;
+}
 function decodeEvent(gzipB64, httpStatus, expected) {
   const xml = decode(gzipB64, httpStatus);
   const event = readNfseEventSummary(xml);
-  if (event.accessKey !== expected.accessKey || event.code !== expected.type) {
+  const sequence = /<(?:\w+:)?infEvento\b[\s\S]*?<(?:\w+:)?nSeqEvento>(\d+)</.exec(xml)?.[1];
+  if (event.accessKey !== expected.accessKey || event.code !== expected.type || sequence === void 0 || expected.sequence !== void 0 && Number(sequence) !== expected.sequence) {
     throw new SefinError("unavailable", [], httpStatus);
   }
   return xml;
@@ -446,10 +459,10 @@ function interpretEmission(response) {
   if (response.status >= 200 && response.status < 300 && json) {
     const accessKey = json.chaveAcesso;
     const nfseGzip = json.nfseXmlGZipB64;
-    if (typeof accessKey === "string" && typeof nfseGzip === "string") {
+    if (isAccessKey(accessKey) && typeof nfseGzip === "string") {
       return {
         accessKey,
-        nfseXml: decode(nfseGzip, response.status),
+        nfseXml: decodeNote(nfseGzip, response.status, accessKey),
         dpsId: String(json.idDps ?? json.idDPS ?? ""),
         alerts: toMessages(json.alertas)
       };
@@ -477,7 +490,7 @@ function interpretEvent(response, expected) {
 }
 function interpretEventLookup(response, expected) {
   const json = parseJson(response.body);
-  if (response.status === 404 && json) return null;
+  if (response.status === 404 && isRecord(json?.erro)) return null;
   if (response.status === 200 && typeof json?.eventoXmlGZipB64 === "string") {
     return decodeEvent(json.eventoXmlGZipB64, response.status, expected);
   }
@@ -487,6 +500,20 @@ function interpretEventLookup(response, expected) {
     messages,
     response.status
   );
+}
+function interpretDpsLookup(response) {
+  if (response.status === 404) return null;
+  const json = parseJson(response.body);
+  if (response.status === 200 && isAccessKey(json?.chaveAcesso)) return json.chaveAcesso;
+  throw new SefinError("unavailable", toMessages(json?.erros ?? json?.erro), response.status);
+}
+function interpretNfseLookup(response, accessKey) {
+  const json = parseJson(response.body);
+  if (response.status === 200 && typeof json?.nfseXmlGZipB64 === "string") {
+    return decodeNote(json.nfseXmlGZipB64, response.status, accessKey);
+  }
+  const messages = toMessages(json?.erros ?? json?.erro);
+  throw new SefinError(response.status === 404 ? "rejected" : "unavailable", messages, response.status);
 }
 var SefinClient = class {
   baseUrl;
@@ -527,31 +554,15 @@ var SefinClient = class {
    */
   async findEvent(accessKey, eventType, sequence = 1) {
     const path = `/nfse/${encodeURIComponent(accessKey)}/eventos/${encodeURIComponent(eventType)}/${sequence}`;
-    return interpretEventLookup(await this.request("GET", path), { accessKey, type: eventType });
+    return interpretEventLookup(await this.request("GET", path), { accessKey, type: eventType, sequence });
   }
   /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */
   async findAccessKeyByDpsId(dpsId2) {
-    const response = await this.request("GET", `/dps/${encodeURIComponent(dpsId2)}`);
-    if (response.status === 404) return null;
-    const json = parseJson(response.body);
-    if (response.status === 200 && typeof json?.chaveAcesso === "string") {
-      return json.chaveAcesso;
-    }
-    throw new SefinError("unavailable", toMessages(json?.erros), response.status);
+    return interpretDpsLookup(await this.request("GET", `/dps/${encodeURIComponent(dpsId2)}`));
   }
   /** The authorized NFS-e XML. `rejected` (HTTP 404) when the key does not exist in this environment. */
   async getNfseXml(accessKey) {
-    const response = await this.request("GET", `/nfse/${encodeURIComponent(accessKey)}`);
-    const json = parseJson(response.body);
-    if (response.status === 200 && typeof json?.nfseXmlGZipB64 === "string") {
-      return decode(json.nfseXmlGZipB64, response.status);
-    }
-    const messages = toMessages(json?.erros);
-    throw new SefinError(
-      response.status === 404 ? "rejected" : "unavailable",
-      messages,
-      response.status
-    );
+    return interpretNfseLookup(await this.request("GET", `/nfse/${encodeURIComponent(accessKey)}`), accessKey);
   }
   async request(method, path, body) {
     try {
@@ -1177,21 +1188,25 @@ function interpretDistribution(response) {
   const status = json?.StatusProcessamento;
   if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
-    const batch = Array.isArray(json?.LoteDFe) ? json.LoteDFe : [];
+    if (!Array.isArray(json?.LoteDFe)) throw new AdnError("unavailable", [], response.status);
+    const batch = json.LoteDFe;
     const wellShaped = (doc) => isRecord2(doc) && Number.isSafeInteger(Number(doc.NSU)) && Number(doc.NSU) > 0 && typeof doc.TipoDocumento === "string" && doc.TipoDocumento !== "";
-    if (!batch.every(wellShaped)) throw new AdnError("unavailable", [], response.status);
+    const increasing = (doc, index, docs) => index === 0 || Number(doc.NSU) > Number(docs[index - 1].NSU);
+    if (!batch.every(wellShaped) || !batch.every(increasing)) throw new AdnError("unavailable", [], response.status);
     let xmls;
     try {
       xmls = gunzipBase64(...batch.map((doc) => String(doc.ArquivoXml ?? "")));
     } catch {
       throw new AdnError("unavailable", [], response.status);
     }
-    return batch.map((doc, index) => ({
-      nsu: Number(doc.NSU),
-      accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
-      type: doc.TipoDocumento,
-      xml: xmls[index]
-    }));
+    return batch.map((doc, index) => {
+      const envelopeKey = isAccessKey(doc.ChaveAcesso) ? doc.ChaveAcesso : null;
+      const noteKey = doc.TipoDocumento === "NFSE" ? nfseAccessKey(xmls[index]) : null;
+      if (doc.TipoDocumento === "NFSE" && (!noteKey || envelopeKey && envelopeKey !== noteKey)) {
+        throw new AdnError("unavailable", [], response.status);
+      }
+      return { nsu: Number(doc.NSU), accessKey: noteKey ?? envelopeKey, type: doc.TipoDocumento, xml: xmls[index] };
+    });
   }
   const messages = toMessages2(json?.Erros);
   if (status === "REJEICAO") throw new AdnError("rejected", messages, response.status);

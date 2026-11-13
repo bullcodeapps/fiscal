@@ -6,6 +6,7 @@ import type { Certificate } from "../core/certificate";
 const MAX_BYTES = 10 * 1024 * 1024;
 
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+const UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 /**
  * Decodes base64 gzip payloads against one shared budget of 10 MB of output, so a page of
@@ -18,7 +19,8 @@ export function gunzipBase64(...values: string[]): string[] {
     const xml = gunzipSync(Buffer.from(value, "base64"), { maxOutputLength: Math.max(budget, 1) });
     budget -= xml.length;
     if (budget < 0) throw new Error("decompressed output above size cap");
-    return xml.toString("utf8");
+    // Buffer#toString would turn invalid bytes into U+FFFD and silently change the stored XML.
+    return UTF8.decode(xml);
   });
 }
 

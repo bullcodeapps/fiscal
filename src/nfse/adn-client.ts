@@ -2,6 +2,7 @@ import type https from "node:https";
 import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
 import { gunzipBase64, mtlsAgent, request, type RawResponse } from "./http";
+import { isAccessKey, nfseAccessKey } from "./summary";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://adn.nfse.gov.br/contribuintes",
@@ -70,7 +71,8 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
   // An empty queue answers 404 with this status.
   if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
-    const batch: unknown[] = Array.isArray(json?.LoteDFe) ? json.LoteDFe : [];
+    if (!Array.isArray(json?.LoteDFe)) throw new AdnError("unavailable", [], response.status);
+    const batch: unknown[] = json.LoteDFe;
     // A page that does not match the documented shape is not an answer: never let the cursor skip it.
     const wellShaped = (doc: unknown): doc is Record<string, unknown> =>
       isRecord(doc) &&
@@ -78,19 +80,25 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
       Number(doc.NSU) > 0 &&
       typeof doc.TipoDocumento === "string" &&
       doc.TipoDocumento !== "";
-    if (!batch.every(wellShaped)) throw new AdnError("unavailable", [], response.status);
+    // A crash between two out-of-order documents would move the cursor past the lower one.
+    const increasing = (doc: Record<string, unknown>, index: number, docs: Record<string, unknown>[]) =>
+      index === 0 || Number(doc.NSU) > Number(docs[index - 1].NSU);
+    if (!batch.every(wellShaped) || !batch.every(increasing)) throw new AdnError("unavailable", [], response.status);
     let xmls: string[];
     try {
       xmls = gunzipBase64(...batch.map((doc) => String(doc.ArquivoXml ?? "")));
     } catch {
       throw new AdnError("unavailable", [], response.status);
     }
-    return batch.map((doc, index) => ({
-      nsu: Number(doc.NSU),
-      accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
-      type: doc.TipoDocumento as string,
-      xml: xmls[index],
-    }));
+    return batch.map((doc, index) => {
+      const envelopeKey = isAccessKey(doc.ChaveAcesso) ? doc.ChaveAcesso : null;
+      // The key decides which stored note an import updates: for a note, the XML's own Id wins.
+      const noteKey = doc.TipoDocumento === "NFSE" ? nfseAccessKey(xmls[index]) : null;
+      if (doc.TipoDocumento === "NFSE" && (!noteKey || (envelopeKey && envelopeKey !== noteKey))) {
+        throw new AdnError("unavailable", [], response.status);
+      }
+      return { nsu: Number(doc.NSU), accessKey: noteKey ?? envelopeKey, type: doc.TipoDocumento as string, xml: xmls[index] };
+    });
   }
   const messages = toMessages(json?.Erros);
   if (status === "REJEICAO") throw new AdnError("rejected", messages, response.status);

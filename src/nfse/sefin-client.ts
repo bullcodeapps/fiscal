@@ -4,7 +4,7 @@ import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
 import { assertWellFormed } from "../core/xml";
 import { gunzipBase64, mtlsAgent, request, type RawResponse } from "./http";
-import { readNfseEventSummary } from "./summary";
+import { isAccessKey, nfseAccessKey, readNfseEventSummary } from "./summary";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://sefin.nfse.gov.br/SefinNacional",
@@ -91,18 +91,34 @@ function decode(gzipB64: string, httpStatus: number): string {
   }
 }
 
-/** The note and event type an event request or lookup is about. */
+/** The note and event an event request or lookup is about. */
 export interface EventRef {
   accessKey: string;
   /** Event code without the "e", e.g. "101101" for a cancellation. */
   type: string;
+  /** nSeqEvento, when a specific one was asked for. */
+  sequence?: number;
+}
+
+/** A note Sefin returns must carry the key it was asked for or announced. */
+function decodeNote(gzipB64: string, httpStatus: number, accessKey: string): string {
+  const xml = decode(gzipB64, httpStatus);
+  if (nfseAccessKey(xml) !== accessKey) throw new SefinError("unavailable", [], httpStatus);
+  return xml;
 }
 
 /** An event Sefin returns must be the one asked for, or it proves nothing. */
 function decodeEvent(gzipB64: string, httpStatus: number, expected: EventRef): string {
   const xml = decode(gzipB64, httpStatus);
   const event = readNfseEventSummary(xml);
-  if (event.accessKey !== expected.accessKey || event.code !== expected.type) {
+  // The registered event wraps the request in infEvento with its nSeqEvento; the bare request proves nothing.
+  const sequence = /<(?:\w+:)?infEvento\b[\s\S]*?<(?:\w+:)?nSeqEvento>(\d+)</.exec(xml)?.[1];
+  if (
+    event.accessKey !== expected.accessKey ||
+    event.code !== expected.type ||
+    sequence === undefined ||
+    (expected.sequence !== undefined && Number(sequence) !== expected.sequence)
+  ) {
     throw new SefinError("unavailable", [], httpStatus);
   }
   return xml;
@@ -115,10 +131,10 @@ export function interpretEmission(response: RawResponse): IssuedNfse {
   if (response.status >= 200 && response.status < 300 && json) {
     const accessKey = json.chaveAcesso;
     const nfseGzip = json.nfseXmlGZipB64;
-    if (typeof accessKey === "string" && typeof nfseGzip === "string") {
+    if (isAccessKey(accessKey) && typeof nfseGzip === "string") {
       return {
         accessKey,
-        nfseXml: decode(nfseGzip, response.status),
+        nfseXml: decodeNote(nfseGzip, response.status, accessKey),
         dpsId: String(json.idDps ?? json.idDPS ?? ""),
         alerts: toMessages(json.alertas),
       };
@@ -152,8 +168,8 @@ export function interpretEvent(response: RawResponse, expected: EventRef): strin
 /** Maps a raw answer of the event lookup to the event XML, null when there is no such event, or a SefinError. */
 export function interpretEventLookup(response: RawResponse, expected: EventRef): string | null {
   const json = parseJson(response.body);
-  // Only Sefin's own JSON 404 means "no event"; a gateway page with the same status proves nothing.
-  if (response.status === 404 && json) return null;
+  // Only Sefin's error envelope (ResponseErro) means "no event"; a gateway's 404 proves nothing.
+  if (response.status === 404 && isRecord(json?.erro)) return null;
   if (response.status === 200 && typeof json?.eventoXmlGZipB64 === "string") {
     return decodeEvent(json.eventoXmlGZipB64, response.status, expected);
   }
@@ -163,6 +179,24 @@ export function interpretEventLookup(response: RawResponse, expected: EventRef):
     messages,
     response.status,
   );
+}
+
+/** Maps a raw answer of `GET /dps/{id}` to the access key, null when Sefin has no note for it, or a SefinError. */
+export function interpretDpsLookup(response: RawResponse): string | null {
+  if (response.status === 404) return null;
+  const json = parseJson(response.body);
+  if (response.status === 200 && isAccessKey(json?.chaveAcesso)) return json.chaveAcesso;
+  throw new SefinError("unavailable", toMessages(json?.erros ?? json?.erro), response.status);
+}
+
+/** Maps a raw answer of `GET /nfse/{chave}` to the note, which must carry that key, or a SefinError. */
+export function interpretNfseLookup(response: RawResponse, accessKey: string): string {
+  const json = parseJson(response.body);
+  if (response.status === 200 && typeof json?.nfseXmlGZipB64 === "string") {
+    return decodeNote(json.nfseXmlGZipB64, response.status, accessKey);
+  }
+  const messages = toMessages(json?.erros ?? json?.erro);
+  throw new SefinError(response.status === 404 ? "rejected" : "unavailable", messages, response.status);
 }
 
 export interface SefinClientOptions {
@@ -221,33 +255,17 @@ export class SefinClient {
    */
   async findEvent(accessKey: string, eventType: string, sequence = 1): Promise<string | null> {
     const path = `/nfse/${encodeURIComponent(accessKey)}/eventos/${encodeURIComponent(eventType)}/${sequence}`;
-    return interpretEventLookup(await this.request("GET", path), { accessKey, type: eventType });
+    return interpretEventLookup(await this.request("GET", path), { accessKey, type: eventType, sequence });
   }
 
   /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */
   async findAccessKeyByDpsId(dpsId: string): Promise<string | null> {
-    const response = await this.request("GET", `/dps/${encodeURIComponent(dpsId)}`);
-    if (response.status === 404) return null;
-    const json = parseJson(response.body);
-    if (response.status === 200 && typeof json?.chaveAcesso === "string") {
-      return json.chaveAcesso;
-    }
-    throw new SefinError("unavailable", toMessages(json?.erros), response.status);
+    return interpretDpsLookup(await this.request("GET", `/dps/${encodeURIComponent(dpsId)}`));
   }
 
   /** The authorized NFS-e XML. `rejected` (HTTP 404) when the key does not exist in this environment. */
   async getNfseXml(accessKey: string): Promise<string> {
-    const response = await this.request("GET", `/nfse/${encodeURIComponent(accessKey)}`);
-    const json = parseJson(response.body);
-    if (response.status === 200 && typeof json?.nfseXmlGZipB64 === "string") {
-      return decode(json.nfseXmlGZipB64, response.status);
-    }
-    const messages = toMessages(json?.erros);
-    throw new SefinError(
-      response.status === 404 ? "rejected" : "unavailable",
-      messages,
-      response.status,
-    );
+    return interpretNfseLookup(await this.request("GET", `/nfse/${encodeURIComponent(accessKey)}`), accessKey);
   }
 
   private async request(method: "GET" | "POST", path: string, body?: string): Promise<RawResponse> {
