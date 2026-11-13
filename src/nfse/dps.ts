@@ -312,7 +312,7 @@ function ibsCbs(value: IbsCbs | undefined, nt009: boolean): string {
 /** The fields that form the DPS Id attribute, which is not escaped. */
 function assertKeyFields(input: DpsInput): void {
   if (!/^\d{7}$/.test(input.cLocEmi)) throw new Error("cLocEmi: must be the 7-digit IBGE code");
-  if (!/^[0-9A-Z]{14}$/.test(input.prest.CNPJ)) throw new Error("prest: CNPJ must be 14 digits or uppercase letters");
+  if (!/^[0-9A-Z]{12}\d{2}$/.test(input.prest.CNPJ)) throw new Error("prest: CNPJ must be 14 digits or uppercase letters");
   if (!/^\d{1,5}$/.test(input.serie)) throw new Error("serie: must be 1 to 5 digits");
   if (!/^[1-9]\d{0,14}$/.test(input.nDPS)) throw new Error("nDPS: must be 1 to 15 digits, not starting with 0");
 }

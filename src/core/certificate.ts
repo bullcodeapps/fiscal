@@ -56,7 +56,7 @@ function extractCnpj(certificate: forge.pki.Certificate): string | null {
       }
       const inner = (wrapper.value as forge.asn1.Asn1[])[0];
       const cnpj = String(inner.value).replace(/[^0-9A-Za-z]/g, "").toUpperCase();
-      return /^[0-9A-Z]{14}$/.test(cnpj) ? cnpj : null;
+      return /^[0-9A-Z]{12}\d{2}$/.test(cnpj) ? cnpj : null;
     } catch {
       // Malformed otherName: treat the certificate as not an e-CNPJ.
       return null;

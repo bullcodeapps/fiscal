@@ -30,7 +30,7 @@ function extractCnpj(certificate) {
       }
       const inner = wrapper.value[0];
       const cnpj = String(inner.value).replace(/[^0-9A-Za-z]/g, "").toUpperCase();
-      return /^[0-9A-Z]{14}$/.test(cnpj) ? cnpj : null;
+      return /^[0-9A-Z]{12}\d{2}$/.test(cnpj) ? cnpj : null;
     } catch {
       return null;
     }

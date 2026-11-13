@@ -37,7 +37,9 @@ Safer answers from Sefin and the ADN (`unavailable` instead of a wrong result):
 - ADN pages: `LoteDFe` array, NSUs positive plain integers in increasing order, documents of a known type
   well-formed and keyed like their envelope.
 - 10 MB limits on bodies and decompressed XML; canonical base64 and strict UTF-8 in every answer.
-- An access key must have the chave structure (letters only in the CNPJ part). An ADN `REJEICAO` on a 5xx is
+- An access key must have the chave structure, and a CNPJ 12 alphanumeric characters plus 2 numeric check
+  digits. An ADN page holds at most 50 documents and an event exactly one event group. `isNfseOfDps` reads the
+  embedded DPS signature with the XML parser. An ADN `REJEICAO` on a 5xx is
   `unavailable`.
 
 Security:

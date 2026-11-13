@@ -183,6 +183,8 @@ describe("export of services", () => {
   it.each([
     [{ cLocEmi: "420820" }, "cLocEmi: must be the 7-digit IBGE code"],
     [{ prest: { ...accepted.prest, CNPJ: "11.222.333/0001-81" } }, "prest: CNPJ must be 14 digits or uppercase letters"],
+    // The two check digits of an alphanumeric CNPJ stay numeric (Receita Federal).
+    [{ prest: { ...accepted.prest, CNPJ: "12ABC34501DEFG" } }, "prest: CNPJ must be 14 digits or uppercase letters"],
     [{ serie: "1\"><x" }, "serie: must be 1 to 5 digits"],
     [{ nDPS: "0" }, "nDPS: must be 1 to 15 digits, not starting with 0"],
   ])("rejects a DPS key field Sefin would refuse (%o)", (patch, message) => {

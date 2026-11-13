@@ -91,6 +91,13 @@ describe("interpretDistribution", () => {
     { scenario: "a page above 10 MB once decompressed", docs: [1, 2, 3].map((nsu) => ({ NSU: nsu, TipoDocumento: "NFSE", ArquivoXml: gz(4 * 1024 * 1024) })) },
     { scenario: "an NSU that is not a positive integer", docs: [{ NSU: "abc", TipoDocumento: "NFSE", ArquivoXml: gz(10) }] },
     { scenario: "base64 with characters outside the alphabet", docs: [{ NSU: 1, TipoDocumento: "NFSE", ArquivoXml: `${gz(10)}!!` }] },
+    // The ADN sends at most 50 per page; more tiny entries would cost a gunzip call each.
+    { scenario: "a page of more than 50 documents", docs: Array.from({ length: 51 }, (_, i) => ({ NSU: i + 1, TipoDocumento: "EVENTO", ArquivoXml: gzipSync(registeredEvent(EVENT_KEY)).toString("base64") })) },
+    // With two event groups the code depends on element order: cancelled or substituted.
+    {
+      scenario: "an event with two event groups",
+      docs: [{ NSU: 1, TipoDocumento: "EVENTO", ArquivoXml: gzipSync(registeredEvent(EVENT_KEY).replace("<e101101>", "<e105102/><e101101>")).toString("base64") }],
+    },
     // Unused trailing bits decode to the same bytes, so "strict" must mean canonical.
     { scenario: "non-canonical base64", docs: [{ NSU: 1, TipoDocumento: "EVENTO", ArquivoXml: nonCanonical(registeredEvent(EVENT_KEY)) }] },
     { scenario: "a page entry that is not an object", docs: [null] },

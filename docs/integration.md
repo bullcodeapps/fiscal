@@ -386,6 +386,8 @@ interface CancelStore {
   release(id: string, lease: string): Promise<void>;
 }
 
+/** Your application's name and version (verAplic, up to 20 characters). */
+const APP_VERSION = "my-app-1.0";
 const CANCELLATION = "101101";
 /** Events that cancel a note: cancellation, by substitution, granted in análise fiscal, de ofício. */
 const CANCELLING_EVENTS = ["101101", "105102", "105104", "305101"];
@@ -418,7 +420,7 @@ export async function requestCancel(
       authorCnpj: certificate.cnpj,
       reason, // 1 Erro na emissão, 2 Serviço não prestado, 9 Outros
       description,
-      verAplic: "my-app-1.0",
+      verAplic: APP_VERSION,
       at: new Date(),
     },
     certificate,
@@ -454,12 +456,18 @@ async function send(store: CancelStore, id: string, lease: string, client: Cance
     return "cancelling";
   };
 
-  try {
-    // An earlier send may have gone through: look before sending again.
-    if (row.cancelSentAt) {
+  // An earlier send may have gone through: look before sending again. A failed lookup proves nothing.
+  if (row.cancelSentAt) {
+    try {
       const found = await client.findEvent(row.accessKey, CANCELLATION);
       if (found) return cancelled(found);
+    } catch (e) {
+      if (e instanceof SefinError) return stay(e);
+      throw e;
     }
+  }
+
+  try {
     await save({ cancelSentAt: new Date() });
     return cancelled(await client.registerEvent(row.accessKey, row.cancelEventXml!));
   } catch (e) {

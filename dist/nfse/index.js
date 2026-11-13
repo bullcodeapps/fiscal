@@ -121,7 +121,7 @@ function ibsCbs(value, nt009) {
 }
 function assertKeyFields(input) {
   if (!/^\d{7}$/.test(input.cLocEmi)) throw new Error("cLocEmi: must be the 7-digit IBGE code");
-  if (!/^[0-9A-Z]{14}$/.test(input.prest.CNPJ)) throw new Error("prest: CNPJ must be 14 digits or uppercase letters");
+  if (!/^[0-9A-Z]{12}\d{2}$/.test(input.prest.CNPJ)) throw new Error("prest: CNPJ must be 14 digits or uppercase letters");
   if (!/^\d{1,5}$/.test(input.serie)) throw new Error("serie: must be 1 to 5 digits");
   if (!/^[1-9]\d{0,14}$/.test(input.nDPS)) throw new Error("nDPS: must be 1 to 15 digits, not starting with 0");
 }
@@ -315,8 +315,8 @@ function readEventRequest(requestXml) {
   return code ? { accessKey: String(infPedReg?.chNFSe ?? ""), code } : null;
 }
 function eventCode(infPedReg) {
-  const key = Object.keys(infPedReg && typeof infPedReg === "object" ? infPedReg : {}).find((k) => /^e\d{6}$/.test(k));
-  return key ? key.slice(1) : null;
+  const keys = Object.keys(infPedReg && typeof infPedReg === "object" ? infPedReg : {}).filter((k) => /^e\d{6}$/.test(k));
+  return keys.length === 1 ? keys[0].slice(1) : null;
 }
 function registeredEvent(eventXml) {
   const infEvento = parseOrNull(eventXml)?.evento?.infEvento;
@@ -335,13 +335,19 @@ function parseOrNull(xml) {
     return null;
   }
 }
-var DPS_DIGEST = /<(?:\w+:)?Reference URI="#(DPS[0-9A-Z]{42})"[\s\S]*?<(?:\w+:)?DigestValue>([^<]+)</;
 function isNfseOfDps(nfseXml, signedDpsXml) {
-  const note = DPS_DIGEST.exec(nfseXml);
-  const dps = DPS_DIGEST.exec(signedDpsXml);
-  return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
+  const note = dpsDigest(parseOrNull(nfseXml)?.NFSe?.infNFSe?.DPS);
+  const dps = dpsDigest(parseOrNull(signedDpsXml)?.DPS);
+  return !!note && !!dps && note.id === dps.id && note.digest === dps.digest;
 }
-var ACCESS_KEY = /^\d{9}[0-9A-Z]{14}\d{27}$/;
+function dpsDigest(dps) {
+  const id = dps?.infDPS?.["@_Id"];
+  const reference = dps?.Signature?.SignedInfo?.Reference;
+  const digest = reference?.DigestValue;
+  if (typeof id !== "string" || reference?.["@_URI"] !== `#${id}` || typeof digest !== "string") return null;
+  return { id, digest: digest.trim() };
+}
+var ACCESS_KEY = /^\d{9}[0-9A-Z]{12}\d{29}$/;
 var isAccessKey = (value) => typeof value === "string" && ACCESS_KEY.test(value);
 function nfseAccessKey(nfseXml) {
   const id = parseOrNull(nfseXml)?.NFSe?.infNFSe?.["@_Id"];
@@ -1095,7 +1101,7 @@ var LAYOUT_VERSION2 = "1.01";
 var CANCELLATION = "101101";
 function buildCancellation(input, certificate) {
   if (!ACCESS_KEY.test(input.accessKey)) throw new RangeError("accessKey must be the 50-character chave de acesso");
-  if (!/^[0-9A-Z]{14}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits or uppercase letters");
+  if (!/^[0-9A-Z]{12}\d{2}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits or uppercase letters");
   const description = input.description.trim();
   const characters = [...description].length;
   if (characters < 15 || characters > 255) {
@@ -1132,6 +1138,7 @@ function parseJson2(body) {
     return null;
   }
 }
+var PAGE_SIZE = 50;
 var isRecord2 = (value) => typeof value === "object" && value !== null;
 function toMessages2(raw) {
   const list = Array.isArray(raw) ? raw : [raw];
@@ -1148,6 +1155,7 @@ function interpretDistribution(response) {
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     if (!Array.isArray(json?.LoteDFe)) throw new AdnError("unavailable", [], response.status);
     const batch = json.LoteDFe;
+    if (batch.length > PAGE_SIZE) throw new AdnError("unavailable", [], response.status);
     const wellShaped = (doc) => isRecord2(doc) && (typeof doc.NSU === "number" || typeof doc.NSU === "string" && /^[1-9][0-9]*$/.test(doc.NSU)) && Number.isSafeInteger(Number(doc.NSU)) && Number(doc.NSU) > 0 && typeof doc.TipoDocumento === "string" && doc.TipoDocumento !== "";
     const increasing = (doc, index, docs) => index === 0 || Number(doc.NSU) > Number(docs[index - 1].NSU);
     if (!batch.every(wellShaped) || !batch.every(increasing)) throw new AdnError("unavailable", [], response.status);

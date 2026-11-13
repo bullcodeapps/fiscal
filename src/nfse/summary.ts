@@ -88,9 +88,10 @@ export function readEventRequest(requestXml: string): { accessKey: string; code:
   return code ? { accessKey: String(infPedReg?.chNFSe ?? ""), code } : null;
 }
 
+/** The code of the request's single event group (e101101 is 101101); null for none or more than one. */
 function eventCode(infPedReg: unknown): string | null {
-  const key = Object.keys(infPedReg && typeof infPedReg === "object" ? infPedReg : {}).find((k) => /^e\d{6}$/.test(k));
-  return key ? key.slice(1) : null;
+  const keys = Object.keys(infPedReg && typeof infPedReg === "object" ? infPedReg : {}).filter((k) => /^e\d{6}$/.test(k));
+  return keys.length === 1 ? keys[0].slice(1) : null;
 }
 
 /**
@@ -116,7 +117,6 @@ function parseOrNull(xml: string): ReturnType<typeof parser.parse> | null {
   }
 }
 
-const DPS_DIGEST = /<(?:\w+:)?Reference URI="#(DPS[0-9A-Z]{42})"[\s\S]*?<(?:\w+:)?DigestValue>([^<]+)</;
 
 /**
  * True when `nfseXml` is the note Sefin issued for exactly this signed DPS: same DPS Id and same
@@ -124,14 +124,23 @@ const DPS_DIGEST = /<(?:\w+:)?Reference URI="#(DPS[0-9A-Z]{42})"[\s\S]*?<(?:\w+:
  * DPS Id, because another DPS that reused the number has the same Id but different content.
  */
 export function isNfseOfDps(nfseXml: string, signedDpsXml: string): boolean {
-  const note = DPS_DIGEST.exec(nfseXml);
-  const dps = DPS_DIGEST.exec(signedDpsXml);
-  return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
+  const note = dpsDigest(parseOrNull(nfseXml)?.NFSe?.infNFSe?.DPS);
+  const dps = dpsDigest(parseOrNull(signedDpsXml)?.DPS);
+  return !!note && !!dps && note.id === dps.id && note.digest === dps.digest;
 }
 
-// cLocEmi, ambGer and tpInsc (9 digits), the CNPJ or CPF (14, letters only in an alphanumeric CNPJ), then nNFSe,
+/** The DPS Id and the digest of the DPS's own signature, which must reference that Id. */
+function dpsDigest(dps: Record<string, any> | undefined): { id: string; digest: string } | null {
+  const id = dps?.infDPS?.["@_Id"];
+  const reference = dps?.Signature?.SignedInfo?.Reference;
+  const digest = reference?.DigestValue;
+  if (typeof id !== "string" || reference?.["@_URI"] !== `#${id}` || typeof digest !== "string") return null;
+  return { id, digest: digest.trim() };
+}
+
+// cLocEmi, ambGer and tpInsc (9 digits), the CNPJ or CPF (14, letters only in the first 12 of a CNPJ), then nNFSe,
 // AAMM, a random code and the check digit (27 digits).
-export const ACCESS_KEY = /^\d{9}[0-9A-Z]{14}\d{27}$/;
+export const ACCESS_KEY = /^\d{9}[0-9A-Z]{12}\d{29}$/;
 
 /** A chave de acesso: 50 digits, with uppercase letters only in the CNPJ part of an alphanumeric CNPJ. */
 export const isAccessKey = (value: unknown): value is string => typeof value === "string" && ACCESS_KEY.test(value);

@@ -52,6 +52,8 @@ function parseJson(body: string): Record<string, unknown> | null {
   }
 }
 
+const PAGE_SIZE = 50;
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 function toMessages(raw: unknown): AdnMessage[] {
@@ -73,6 +75,8 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     if (!Array.isArray(json?.LoteDFe)) throw new AdnError("unavailable", [], response.status);
     const batch: unknown[] = json.LoteDFe;
+    // The ADN pages 50 documents; more would cost one gunzip call each past the byte budget.
+    if (batch.length > PAGE_SIZE) throw new AdnError("unavailable", [], response.status);
     // A page that does not match the documented shape is not an answer: never let the cursor skip it.
     const wellShaped = (doc: unknown): doc is Record<string, unknown> =>
       isRecord(doc) &&

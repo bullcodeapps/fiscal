@@ -29,7 +29,7 @@ export function buildCancellation(
   certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">,
 ): string {
   if (!ACCESS_KEY.test(input.accessKey)) throw new RangeError("accessKey must be the 50-character chave de acesso");
-  if (!/^[0-9A-Z]{14}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits or uppercase letters");
+  if (!/^[0-9A-Z]{12}\d{2}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits or uppercase letters");
   const description = input.description.trim();
   const characters = [...description].length;
   if (characters < 15 || characters > 255) {

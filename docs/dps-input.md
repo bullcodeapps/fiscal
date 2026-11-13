@@ -36,7 +36,7 @@ Conventions:
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `CNPJ` | `string` | 14 digits or uppercase letters (alphanumeric CNPJ), no mask. Must equal `certificate.cnpj`. Only produção restrita (NT 009 schema) accepts an alphanumeric CNPJ today: the produção schema in force (`nfse-esquemas_xsd-v1-01-20260209`) is digits only, so such a provider cannot issue in produção until NT 009 is deployed there. |
+| `CNPJ` | `string` | 14 digits, or 12 digits or uppercase letters plus 2 check digits (alphanumeric CNPJ), no mask. Must equal `certificate.cnpj`. Only produção restrita (NT 009 schema) accepts an alphanumeric CNPJ today: the produção schema in force (`nfse-esquemas_xsd-v1-01-20260209`) is digits only, so such a provider cannot issue in produção until NT 009 is deployed there. |
 | `IM` | `string` | Optional. Municipal registration, when the municipality requires it. |
 | `regTrib.opSimpNac` | `1 \| 2 \| 3` | 1 Não optante, 2 MEI, 3 ME/EPP (Simples Nacional). 4 (Pendente) comes with NT 009 and is not accepted yet. |
 | `regTrib.regApTribSN` | `1 \| 2 \| 3` | Required when `opSimpNac` is 3. 1 federal taxes and ISSQN in the Simples Nacional; 2 federal taxes in the SN, ISSQN by the municipality's rules; 3 both outside the SN (the company exceeded a sublimit or limit). |

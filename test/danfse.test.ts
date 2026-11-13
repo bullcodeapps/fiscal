@@ -285,6 +285,14 @@ describe("isNfseOfDps", () => {
   it("is false for a note with the same DPS Id but other content", () => {
     expect(isNfseOfDps(nfseWith(signed("Servico de março")), signed("Servico de abril"))).toBe(false);
   });
+
+  // Only the embedded DPS signature counts; a copy of this DPS's digest in a comment is not it.
+  it("ignores a matching digest outside the embedded DPS signature", () => {
+    const mine = signed("Servico de março");
+    const decoy = /<Reference[\s\S]*?<\/Reference>/.exec(mine)![0];
+    const note = nfseWith(signed("Servico de abril")).replace("<nNFSe>", `<!-- ${decoy} --><nNFSe>`);
+    expect(isNfseOfDps(note, mine)).toBe(false);
+  });
 });
 
 describe("readNfseEventSummary", () => {
