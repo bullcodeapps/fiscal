@@ -1,7 +1,7 @@
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
 import { NFSE_LOGO_PNG } from "./logo";
-import { buildDanfseModel, type DanfseBlock, type DanfseField } from "./model";
+import { buildDanfseModel, type DanfseBlock, type DanfseField, type DanfseOptions } from "./model";
 
 // Geometry from NT 008 item 2.4.5 (cm). Helvetica stands in for Arial and
 // Microsoft Sans Serif: same metrics, and the only one pdfkit can embed
@@ -81,12 +81,12 @@ function block(doc: Doc, item: DanfseBlock, top: number): number {
 }
 
 /**
- * DANFSe v2.0 (NT 008 v1.02, Anexo I) for an authorized NFS-e XML, one A4
+ * DANFSe v2.0 (NT 008 v1.02, Anexo I) for an NFS-e XML, one A4
  * page. The optional "canhoto" block is left out; its space goes to
  * "Informações Complementares" (item 2.3.3).
  */
-export async function renderDanfse(nfseXml: string): Promise<Buffer> {
-  const model = buildDanfseModel(nfseXml);
+export async function renderDanfse(nfseXml: string, options: DanfseOptions = {}): Promise<Buffer> {
+  const model = buildDanfseModel(nfseXml, options);
   const qrCode = await QRCode.toBuffer(model.qrCodeUrl, { margin: 0, width: 240, errorCorrectionLevel: "M" });
 
   const doc = new PDFDocument({ size: "A4", margin: 0, info: { Title: `DANFSe ${model.accessKey}` } });
@@ -102,7 +102,7 @@ export async function renderDanfse(nfseXml: string): Promise<Buffer> {
   if (model.withoutLegalValue) {
     write(doc, "NFS-e SEM VALIDADE JURÍDICA", 5.41, 1.1, 10.19, { font: BOLD, size: 9, color: RED, align: "center" });
   }
-  write(doc, model.header.municipality, 15.62, 0.4, 5.09, { size: 8 });
+  if (model.header.municipality) write(doc, model.header.municipality, 15.62, 0.4, 5.09, { size: 8 });
   write(doc, model.header.generator, 15.62, 0.97, 5.09, { size: 6 });
   write(doc, model.header.environment, 15.62, 1.22, 5.09, { size: 6 });
   line(doc, 1.46);
@@ -158,6 +158,14 @@ export async function renderDanfse(nfseXml: string): Promise<Buffer> {
       height: Math.max(pt(BOTTOM - y - 0.5), 0),
       ellipsis: true,
     });
+
+  if (model.watermark) {
+    // NT 008 2.5: diagonal, at least 50 pt, normal weight, gray K35. Translucent so the content stays legible.
+    const [x, y] = [pt(10.5), pt(PAGE_HEIGHT_CM / 2)];
+    doc.save().rotate(-55, { origin: [x, y] }).font(REGULAR).fontSize(90).fillColor("#a6a6a6").fillOpacity(0.6);
+    doc.text(model.watermark, x - doc.widthOfString(model.watermark) / 2, y - 45, { lineBreak: false });
+    doc.restore();
+  }
 
   doc
     .lineWidth(1)

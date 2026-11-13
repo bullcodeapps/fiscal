@@ -69,7 +69,7 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
   const status = json?.StatusProcessamento;
 
   // An empty queue answers 404 with this status.
-  if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
+  if (status === "NENHUM_DOCUMENTO_LOCALIZADO" && (response.status === 404 || response.status === 200)) return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     if (!Array.isArray(json?.LoteDFe)) throw new AdnError("unavailable", [], response.status);
     const batch: unknown[] = json.LoteDFe;

@@ -267,13 +267,6 @@ declare class SefinClient {
 }
 
 /**
- * DANFSe v2.0 (NT 008 v1.02, Anexo I) for an authorized NFS-e XML, one A4
- * page. The optional "canhoto" block is left out; its space goes to
- * "Informações Complementares" (item 2.3.3).
- */
-declare function renderDanfse(nfseXml: string): Promise<Buffer>;
-
-/**
  * DANFSe v2.0 content (NT 008 SE/CGNFS-e v1.02, 14/07/2026, Anexo I),
  * derived only from the NFS-e XML as the NT requires. Drawing lives in
  * render.ts; this file decides what each field shows.
@@ -294,14 +287,24 @@ interface DanfseBlock {
     /** Row height in cm (0.63 regular, 0.67 for identification and totals). */
     rowHeight: number;
 }
+interface DanfseOptions {
+    /**
+     * The note's situation, which its XML does not carry: set it from your records (a cancelling event, or the
+     * note that replaced it). NT 008 requires the watermark on a cancelled or substituted note.
+     */
+    situation?: "cancelled" | "substituted";
+}
 interface DanfseModel {
     accessKey: string;
     qrCodeUrl: string;
+    /** municipality is null when the national code's item is 99 (NT 008). */
     header: {
-        municipality: string;
+        municipality: string | null;
         generator: string;
         environment: string;
     };
+    /** Diagonal watermark: "CANCELADA" or "SUBSTITUÍDA" (NT 008 2.5), else null. */
+    watermark: string | null;
     /** tpAmb = 2: the header must say "NFS-e SEM VALIDADE JURÍDICA". */
     withoutLegalValue: boolean;
     identification: DanfseField[][];
@@ -310,7 +313,14 @@ interface DanfseModel {
     serviceDescription: string;
     complementaryInfo: string[];
 }
-declare function buildDanfseModel(nfseXml: string): DanfseModel;
+declare function buildDanfseModel(nfseXml: string, options?: DanfseOptions): DanfseModel;
+
+/**
+ * DANFSe v2.0 (NT 008 v1.02, Anexo I) for an NFS-e XML, one A4
+ * page. The optional "canhoto" block is left out; its space goes to
+ * "Informações Complementares" (item 2.3.3).
+ */
+declare function renderDanfse(nfseXml: string, options?: DanfseOptions): Promise<Buffer>;
 
 /** 1 Erro na emissão, 2 Serviço não prestado, 9 Outros. */
 type CancellationReason = 1 | 2 | 9;
@@ -361,7 +371,11 @@ interface NfseEventSummary {
 }
 /** What a caller needs to confirm an existing NFS-e is the one it meant to issue. */
 declare function readNfseSummary(nfseXml: string): NfseSummary;
-/** Reads an event XML distributed by the ADN (the registered event wraps the original request). */
+/**
+ * Reads a registered event (`evento/infEvento/pedRegEvento/infPedReg`), as the ADN distributes it and
+ * `registerEvent` / `findEvent` return it. `code` is null for any other well-formed document, including a bare
+ * request, which proves nothing.
+ */
 declare function readNfseEventSummary(eventXml: string): NfseEventSummary;
 /**
  * True when `nfseXml` is the note Sefin issued for exactly this signed DPS: same DPS Id and same
@@ -414,4 +428,4 @@ declare class AdnClient {
     fetchDocuments(lastNsu: number): Promise<AdnDocument[]>;
 }
 
-export { type Address, AdnClient, type AdnClientOptions, type AdnDocument, AdnError, type AdnMessage, type BuiltDps, type CancellationInput, type CancellationReason, type DanfseModel, type DpsInput, type DpsKey, Environment, type ForeignAddress, type ForeignTrade, type IbsCbs, type IssuedNfse, type MovableGood, type NationalAddress, type NfseEventSummary, type NfseSummary, type Provider, SefinClient, type SefinClientOptions, SefinError, type SefinMessage, type Service, type Taker, type TotTrib, type Values, buildCancellation, buildDanfseModel, buildDps, dpsId, isNfseOfDps, readNfseEventSummary, readNfseSummary, renderDanfse, signDps };
+export { type Address, AdnClient, type AdnClientOptions, type AdnDocument, AdnError, type AdnMessage, type BuiltDps, type CancellationInput, type CancellationReason, type DanfseModel, type DanfseOptions, type DpsInput, type DpsKey, Environment, type ForeignAddress, type ForeignTrade, type IbsCbs, type IssuedNfse, type MovableGood, type NationalAddress, type NfseEventSummary, type NfseSummary, type Provider, SefinClient, type SefinClientOptions, SefinError, type SefinMessage, type Service, type Taker, type TotTrib, type Values, buildCancellation, buildDanfseModel, buildDps, dpsId, isNfseOfDps, readNfseEventSummary, readNfseSummary, renderDanfse, signDps };

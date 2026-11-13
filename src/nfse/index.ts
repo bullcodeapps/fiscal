@@ -26,7 +26,7 @@ export {
   type SefinMessage,
 } from "./sefin-client";
 export { renderDanfse } from "./danfse/render";
-export { buildDanfseModel, type DanfseModel } from "./danfse/model";
+export { buildDanfseModel, type DanfseModel, type DanfseOptions } from "./danfse/model";
 export { buildCancellation, type CancellationInput, type CancellationReason } from "./events";
 export {
   isNfseOfDps,

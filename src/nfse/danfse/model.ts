@@ -26,10 +26,21 @@ export interface DanfseBlock {
   rowHeight: number;
 }
 
+export interface DanfseOptions {
+  /**
+   * The note's situation, which its XML does not carry: set it from your records (a cancelling event, or the
+   * note that replaced it). NT 008 requires the watermark on a cancelled or substituted note.
+   */
+  situation?: "cancelled" | "substituted";
+}
+
 export interface DanfseModel {
   accessKey: string;
   qrCodeUrl: string;
-  header: { municipality: string; generator: string; environment: string };
+  /** municipality is null when the national code's item is 99 (NT 008). */
+  header: { municipality: string | null; generator: string; environment: string };
+  /** Diagonal watermark: "CANCELADA" or "SUBSTITUÍDA" (NT 008 2.5), else null. */
+  watermark: string | null;
   /** tpAmb = 2: the header must say "NFS-e SEM VALIDADE JURÍDICA". */
   withoutLegalValue: boolean;
   identification: DanfseField[][];
@@ -47,6 +58,7 @@ const C_STAT: Record<string, string> = {
   "101": "NFS-e de Substituição Gerada",
   "102": "NFS-e de Decisão Judicial ou Administrativa",
   "103": "NFS-e Avulsa",
+  "107": "NFS-e MEI",
 };
 const FIN_NFSE: Record<string, string> = {
   "0": "NFS-e regular",
@@ -211,7 +223,7 @@ const parser = new XMLParser({
   isArray: (name) => name === "bensMoveis",
 });
 
-export function buildDanfseModel(nfseXml: string): DanfseModel {
+export function buildDanfseModel(nfseXml: string, options: DanfseOptions = {}): DanfseModel {
   assertWellFormed(nfseXml);
   const root = parser.parse(nfseXml) as Record<string, Node>;
   const inf = child(root.NFSe, "infNFSe");
@@ -467,6 +479,9 @@ export function buildDanfseModel(nfseXml: string): DanfseModel {
     text(infoCompl, "idDocTec") && `Doc. Tec.: ${text(infoCompl, "idDocTec")}`,
     text(infoCompl, "xPed") && `Núm. Ped.: ${text(infoCompl, "xPed")}`,
     text(inf, "xOutInf") && `Inf. A. T. Mun.: ${text(inf, "xOutInf")}`,
+    text(child(serv, "obra"), "cObra") && `Cod. Obra: ${text(child(serv, "obra"), "cObra")}`,
+    text(child(serv, "obra"), "inscImobFisc") && `Insc. Imob.: ${text(child(serv, "obra"), "inscImobFisc")}`,
+    text(child(serv, "atvEvento"), "idAtvEvt") && `Cod. Evt.: ${text(child(serv, "atvEvento"), "idAtvEvt")}`,
     ...((dpsIbsCbs?.bensMoveis as Node[] | undefined) ?? []).map(
       (good) => `Bem Móvel: NCM ${or(text(good, "cNCMBemMovel"))} - ${or(text(good, "xNCMBemMovel"))} (${or(text(good, "qtdNCMBemMovel"))})`,
     ),
@@ -477,10 +492,13 @@ export function buildDanfseModel(nfseXml: string): DanfseModel {
     accessKey,
     qrCodeUrl: `${QR_CODE_BASE}${accessKey}`,
     header: {
-      municipality: `Município: ${or(text(inf, "xLocEmi"))} - ${or(text(child(emit, "enderNac"), "UF"))}`,
+      municipality: text(cServ, "cTribNac")?.startsWith("99")
+        ? null
+        : `Município: ${or(text(inf, "xLocEmi"))} / ${or(text(child(emit, "enderNac"), "UF"))}`,
       generator: `Ambiente Gerador: ${describe(AMB_GER, text(inf, "ambGer"))}`,
       environment: `Tipo de Ambiente: ${describe(TP_AMB, tpAmb)}`,
     },
+    watermark: options.situation === "cancelled" ? "CANCELADA" : options.situation === "substituted" ? "SUBSTITUÍDA" : null,
     withoutLegalValue: tpAmb === "2",
     identification: [
       [

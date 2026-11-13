@@ -120,6 +120,17 @@ describe("interpretDistribution", () => {
     expect((error as AdnError).kind).toBe("unavailable");
   });
 
+  // An outage must not read as a drained queue: the importer would then wait an hour.
+  it("treats an empty-queue status on a server error as unavailable", () => {
+    let error: unknown;
+    try {
+      interpretDistribution({ status: 500, body: JSON.stringify({ StatusProcessamento: "NENHUM_DOCUMENTO_LOCALIZADO" }) });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect((error as AdnError).kind).toBe("unavailable");
+  });
+
   it("treats a found-documents status without a document list as unavailable", () => {
     let error: unknown;
     try {

@@ -4,7 +4,7 @@ import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
 import { assertWellFormed } from "../core/xml";
 import { gunzipBase64, mtlsAgent, request, type RawResponse } from "./http";
-import { isAccessKey, nfseAccessKey, readNfseEventSummary, registeredEvent } from "./summary";
+import { isAccessKey, nfseAccessKey, registeredEvent, requestEventCode } from "./summary";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://sefin.nfse.gov.br/SefinNacional",
@@ -166,7 +166,7 @@ export function interpretEvent(response: RawResponse, expected: EventRef): strin
 export function interpretEventLookup(response: RawResponse, expected: EventRef): string | null {
   const json = parseJson(response.body);
   // Only Sefin's error envelope (ResponseErro) means "no event"; a gateway's 404 proves nothing.
-  if (response.status === 404 && isRecord(json?.erro)) return null;
+  if (response.status === 404 && isRecord(json?.erro) && !Array.isArray(json.erro)) return null;
   if (response.status === 200 && typeof json?.eventoXmlGZipB64 === "string") {
     return decodeEvent(json.eventoXmlGZipB64, response.status, expected);
   }
@@ -237,7 +237,7 @@ export class SefinClient {
    * (see docs/integration.md, cancellation).
    */
   async registerEvent(accessKey: string, signedEventXml: string): Promise<string> {
-    const type = readNfseEventSummary(signedEventXml).code;
+    const type = requestEventCode(signedEventXml);
     if (!type) throw new Error("registerEvent: signedEventXml is not a pedRegEvento (use buildCancellation)");
     const body = JSON.stringify({
       pedidoRegistroEventoXmlGZipB64: gzipSync(signedEventXml).toString("base64"),

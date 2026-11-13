@@ -64,7 +64,7 @@ Create the row before you talk to Sefin. Suggested columns:
 
 | Column | Set when |
 | --- | --- |
-| `environment`, `serie`, `nDPS` | The row is created. `nDPS` comes from an atomic counter per (`environment`, provider CNPJ, `serie`) and never changes. |
+| `environment`, `providerCnpj`, `serie`, `nDPS` | The row is created. `nDPS` comes from an atomic counter per (`environment`, `providerCnpj`, `serie`) and never changes. |
 | `dpsId`, `signedDpsXml` | After `buildDps` + `signDps`, before the first send. Cleared when Sefin rejects the DPS. |
 | `sentAt` | Right before each `client.emit` |
 | `accessKey` | As soon as Sefin returns it. Never cleared. |
@@ -183,6 +183,7 @@ interface NoteRow {
   id: string;
   environment: Environment;
   status: Status;
+  providerCnpj: string;
   serie: string;
   /** Allocated when the row is created, from a counter per environment + provider CNPJ + serie. */
   nDPS: string;
@@ -202,7 +203,10 @@ interface Store {
    * 10 minutes (a crashed attempt). Returns a new lease, or null when the row cannot be claimed.
    */
   claim(id: string): Promise<string | null>;
-  /** Writes only while the row still holds `lease`, else throws: a stale attempt never overwrites a newer one. */
+  /**
+   * Writes only while the row still holds `lease`, else throws: a stale attempt never overwrites a newer one.
+   * A write that sets `status` also clears the lease, so the next step (a cancellation) can claim the row at once.
+   */
   patch(id: string, lease: string, values: Partial<NoteRow>): Promise<void>;
 }
 
@@ -263,8 +267,9 @@ export async function issue(
       try {
         const input = inputFor(row);
         // The number was allocated with the row: a value from a form would desync the counter.
-        if (input.environment !== row.environment || input.serie !== row.serie || input.nDPS !== row.nDPS) {
-          throw new Error("inputFor must use the row's environment, serie and nDPS");
+        const sameNumber = input.environment === row.environment && input.serie === row.serie && input.nDPS === row.nDPS;
+        if (!sameNumber || input.prest.CNPJ !== row.providerCnpj || certificate.cnpj !== row.providerCnpj) {
+          throw new Error("inputFor and the certificate must match the row's environment, provider, serie and nDPS");
         }
         const dps = buildDps(input);
         signed = signDps(dps.xml, certificate);
@@ -277,6 +282,7 @@ export async function issue(
     await save({ sentAt: new Date() });
     try {
       const issued = await client.emit(signed);
+      if (issued.alerts.length > 0) console.warn(`Sefin alerts for note ${id}`, issued.alerts);
       accessKey = issued.accessKey;
       nfseXml = issued.nfseXml;
     } catch (e) {
@@ -301,13 +307,10 @@ export async function issue(
   await save({ status: "authorized", nfseXml, number: readNfseSummary(nfseXml).number, messages: null });
   return "authorized";
 }
-
-/** Call site. Build one client per environment and certificate, and reuse it across calls. */
-export function issuer(environment: Environment, certificate: Certificate, store: Store, inputFor: (row: NoteRow) => DpsInput) {
-  const client = new SefinClient({ environment, certificate });
-  return (id: string) => issue(store, id, client, certificate, inputFor);
-}
 ```
+
+Build one `SefinClient` per (environment, certificate), reuse it across calls, and pass the one whose environment
+is the row's.
 
 The stale-claim window (10 minutes here) must be longer than the slowest Sefin call. `timeoutMs` is an idle
 timeout, so a response that trickles in can outlast it: keep the window well above `timeoutMs`, or renew the
@@ -322,10 +325,13 @@ the user fixes a `rejected` row. It is safe to call at any time and from several
 import { renderDanfse, buildDanfseModel } from "@bullcode/fiscal/nfse";
 
 const pdf: Buffer = await renderDanfse(nfseXml); // DANFSe v2.0 (NT 008), A4, with QR code
+const cancelledPdf = await renderDanfse(nfseXml, { situation: "cancelled" }); // "CANCELADA" watermark
 ```
 
-Render from the stored `nfseXml` at any time. The PDF is derived only from the XML, so store the XML and
-re-render on demand. `buildDanfseModel(nfseXml)` returns the same content as data, for a custom layout.
+Render from the stored `nfseXml` at any time and re-render on demand. The XML does not say whether the note was
+later cancelled or replaced, so pass `situation` from the row: `"cancelled"` when it is `cancelled` (NT 008
+requires the watermark), `"substituted"` when another note replaced it (event 105102). `buildDanfseModel(nfseXml,
+options)` returns the same content as data, for a custom layout.
 
 ## 10. Read a note
 
@@ -577,14 +583,15 @@ For unit tests in your app, pass a fake to `issue` (`IssueClient`) and `cancel` 
 
 - [ ] Issuing municipality accepts the national emitters (codes.md)
 - [ ] Certificate and password stored encrypted and never logged, `validTo` monitored; untrusted uploads parsed in a worker thread with a time limit
-- [ ] `prest.CNPJ` equals `certificate.cnpj`
+- [ ] `prest.CNPJ` equals `certificate.cnpj` and the row's `providerCnpj`
 - [ ] `nDPS` from an atomic counter per environment, provider CNPJ and `serie`, fixed for the row's life
 - [ ] Row created and signed DPS saved before the first `emit`
 - [ ] `sentAt` saved before each `emit`, `accessKey` saved alone right after
 - [ ] `rejected` (except E0014), certificate refusal and `unavailable` handled as in step 6
 - [ ] Reconciliation by `dpsId` before any resend, with `isNfseOfDps(nfseXml, row.signedDpsXml)` on the found note
 - [ ] One attempt per row at a time, every write fenced by the attempt's lease
-- [ ] `nfseXml` stored as personal data; DANFSe rendered from it
+- [ ] `nfseXml` stored as personal data; DANFSe rendered from it, with `situation` for a cancelled or substituted note
+- [ ] `issued.alerts` logged
 - [ ] Cancellation validated with `buildCancellation` at request time and started with one atomic `requestCancellation`; `cancelSentAt` persisted before each send; `findEvent` before any resend or final rejection
 - [ ] ADN import: cursor and lease per (environment, CNPJ), one runner at a time, each document and a forward-only cursor in one transaction fenced by that lease; any cancelling event (101101, 105102, 105104, 305101) sets `cancelled` and clears the note's lease; never the only confirmation of the app's own notes or cancellations
 - [ ] Environment stored per note and used for queries and cancellation

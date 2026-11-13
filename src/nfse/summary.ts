@@ -67,15 +67,25 @@ export function readNfseSummary(nfseXml: string): NfseSummary {
   };
 }
 
-/** Reads an event XML distributed by the ADN (the registered event wraps the original request). */
+/**
+ * Reads a registered event (`evento/infEvento/pedRegEvento/infPedReg`), as the ADN distributes it and
+ * `registerEvent` / `findEvent` return it. `code` is null for any other well-formed document, including a bare
+ * request, which proves nothing.
+ */
 export function readNfseEventSummary(eventXml: string): NfseEventSummary {
   assertWellFormed(eventXml);
-  const infPedReg = findKey(parser.parse(eventXml), "infPedReg") as Record<string, unknown> | undefined;
-  const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
-  return {
-    accessKey: String(infPedReg?.chNFSe ?? ""),
-    code: codeKey ? codeKey.slice(1) : null,
-  };
+  const infPedReg = parser.parse(eventXml)?.evento?.infEvento?.pedRegEvento?.infPedReg;
+  return { accessKey: String(infPedReg?.chNFSe ?? ""), code: eventCode(infPedReg) };
+}
+
+/** The event code of a signed request (`pedRegEvento`), as `buildCancellation` returns it, or null. */
+export function requestEventCode(requestXml: string): string | null {
+  return eventCode(parseOrNull(requestXml)?.pedRegEvento?.infPedReg);
+}
+
+function eventCode(infPedReg: unknown): string | null {
+  const key = Object.keys(infPedReg && typeof infPedReg === "object" ? infPedReg : {}).find((k) => /^e\d{6}$/.test(k));
+  return key ? key.slice(1) : null;
 }
 
 /**
@@ -86,10 +96,10 @@ export function registeredEvent(eventXml: string): { accessKey: string; code: st
   const infEvento = parseOrNull(eventXml)?.evento?.infEvento;
   const infPedReg = infEvento?.pedRegEvento?.infPedReg;
   const sequence = String(infEvento?.nSeqEvento ?? "");
-  const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
+  const code = eventCode(infPedReg);
   const accessKey = infPedReg?.chNFSe;
-  if (!/^\d+$/.test(sequence) || !codeKey || !isAccessKey(accessKey)) return null;
-  return { accessKey, code: codeKey.slice(1), sequence: Number(sequence) };
+  if (!/^\d+$/.test(sequence) || !code || !isAccessKey(accessKey)) return null;
+  return { accessKey, code, sequence: Number(sequence) };
 }
 
 function parseOrNull(xml: string): ReturnType<typeof parser.parse> | null {
@@ -99,17 +109,6 @@ function parseOrNull(xml: string): ReturnType<typeof parser.parse> | null {
   } catch {
     return null;
   }
-}
-
-function findKey(node: unknown, key: string): unknown {
-  if (!node || typeof node !== "object") return undefined;
-  const record = node as Record<string, unknown>;
-  if (key in record) return record[key];
-  for (const child of Object.values(record)) {
-    const found = findKey(child, key);
-    if (found !== undefined) return found;
-  }
-  return undefined;
 }
 
 const DPS_DIGEST = /<(?:\w+:)?Reference URI="#(DPS[0-9A-Z]{42})"[\s\S]*?<(?:\w+:)?DigestValue>([^<]+)</;

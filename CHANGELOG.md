@@ -48,6 +48,13 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
 - Access keys and events are read with the XML parser: a key in a comment, an event request outside
   `infEvento`, malformed ADN XML or a malformed ADN envelope key is `unavailable`.
 - DANFSe shows `cPaisPrestacao` / `cPaisResult` instead of BR for services abroad and exports.
+- `renderDanfse(nfseXml, { situation })` and `buildDanfseModel`: "CANCELADA" or "SUBSTITUÍDA" watermark
+  (NT 008 2.5). The header shows `Município: name / UF`, and no municipality for national code item 99. The
+  complementary information lists `Cod. Obra`, `Insc. Imob.` and `Cod. Evt.`. cStat 107 reads "NFS-e MEI".
+- `readNfseEventSummary` reads only the registered request (`evento/infEvento/pedRegEvento/infPedReg`); a bare
+  request returns code null.
+- `buildCancellation` counts the justification in characters, not UTF-16 units.
+- `findEvent` returns null only for a 404 whose `erro` is an object; the ADN empty queue only on HTTP 200 or 404.
 - MIT license.
 - node-forge 1.4.3 and fast-xml-parser 5.12.0 (security advisories).
 - Pins pnpm 10 in `packageManager`.

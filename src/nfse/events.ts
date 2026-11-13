@@ -30,7 +30,8 @@ export function buildCancellation(
   if (!/^[0-9A-Z]{50}$/.test(input.accessKey)) throw new RangeError("accessKey must be the 50-character chave de acesso");
   if (!/^[0-9A-Z]{14}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits or uppercase letters");
   const description = input.description.trim();
-  if (description.length < 15 || description.length > 255) {
+  const characters = [...description].length;
+  if (characters < 15 || characters > 255) {
     throw new RangeError("A justificativa do cancelamento deve ter entre 15 e 255 caracteres.");
   }
   const xml =

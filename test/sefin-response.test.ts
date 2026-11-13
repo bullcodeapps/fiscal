@@ -172,6 +172,8 @@ describe("interpretEventLookup", () => {
     { scenario: "a JSON 404 from a gateway", response: { status: 404, body: JSON.stringify({ message: "Not Found" }) } },
     { scenario: "the cancellation request instead of the registered event", response: { status: 200, body: JSON.stringify({ eventoXmlGZipB64: gz(eventXmlFor(KEY).replace(/^<evento><infEvento[^>]*><nSeqEvento>1<\/nSeqEvento>/, "").replace("</infEvento></evento>", "")) }) } },
     { scenario: "a 200 without the event", response: { status: 200, body: "{}" } },
+    // ResponseErro carries one `erro` object; a list is not that envelope.
+    { scenario: "a 404 whose erro is a list", response: { status: 404, body: JSON.stringify({ erro: [] }) } },
     { scenario: "a 200 with another note's event", response: { status: 200, body: JSON.stringify({ eventoXmlGZipB64: gz(eventXmlFor(KEY, "105102")) }) } },
     { scenario: "a server error", response: { status: 502, body: "" } },
   ])("treats $scenario as unavailable", ({ response }) => {

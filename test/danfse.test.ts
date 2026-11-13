@@ -47,7 +47,8 @@ describe("buildDanfseModel", () => {
       "https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=42082032211222333000181000000000000226100953785610",
     );
     expect(rental.withoutLegalValue).toBe(true);
-    expect(rental.header.municipality).toBe("Município: Itajaí - SC");
+    // NT 008: no municipality in the header when the national code's item is 99.
+    expect(rental.header.municipality).toBeNull();
     expect(Object.fromEntries(rental.identification.flat().map((f) => [f.label, f.value]))).toEqual({
       "NÚMERO DA NFS-E": "2",
       "COMPETÊNCIA DA NFS-E": "26/10/2026",
@@ -109,6 +110,34 @@ describe("buildDanfseModel", () => {
       "Bem Móvel: NCM 89039900 - JET SKI SEA-DOO WAKE PRO 230 (1)",
       "Totais Aproximados dos Tributos cfe. Lei nº 12.741/2012: Simples Nacional: 6,00%",
     ]);
+  });
+
+  it("shows the issuing municipality as NT 008 formats it", () => {
+    expect(buildDanfseModel(fixture("nfse-170303")).header.municipality).toBe("Município: Itajaí / SC");
+  });
+
+  // NT 008 2.5: a cancelled or substituted note must carry the watermark, or it reads as valid.
+  it.each([
+    [undefined, null],
+    [{ situation: "cancelled" as const }, "CANCELADA"],
+    [{ situation: "substituted" as const }, "SUBSTITUÍDA"],
+  ])("sets the watermark for %o", (options, watermark) => {
+    expect(buildDanfseModel(fixture("nfse-170303"), options).watermark).toBe(watermark);
+  });
+
+  it("lists the construction and event identifiers NT 008 requires in the complementary information", () => {
+    const xml = fixture("nfse-170303").replace(
+      "</cServ></serv>",
+      "</cServ><obra><inscImobFisc>IMOB1</inscImobFisc><cObra>OBRA1</cObra></obra><atvEvento><idAtvEvt>EVT1</idAtvEvt></atvEvento></serv>",
+    );
+    expect(buildDanfseModel(xml).complementaryInfo).toEqual(
+      expect.arrayContaining(["Cod. Obra: OBRA1", "Insc. Imob.: IMOB1", "Cod. Evt.: EVT1"]),
+    );
+  });
+
+  it("describes a MEI note's status instead of printing its code", () => {
+    const xml = fixture("nfse-170303").replace("<cStat>100</cStat>", "<cStat>107</cStat>");
+    expect(buildDanfseModel(xml).identification.flat().find((f) => f.label === "SITUAÇÃO DA NFS-E")?.value).toBe("NFS-e MEI");
   });
 
   it("keeps the ISSQN block for a taxable service and drops its empty benefit row", () => {
@@ -193,6 +222,11 @@ describe("renderDanfse", () => {
     expect(content.match(/\/Type \/Page\b(?!s)/g)).toHaveLength(1);
     expect(content).toContain("/MediaBox [0 0 595.28 841.89]");
   });
+
+  it("keeps a cancelled note on one page with its watermark", async () => {
+    const pdf = await renderDanfse(fixture("nfse-990401"), { situation: "cancelled" });
+    expect(pdf.toString("latin1").match(/\/Type \/Page\b(?!s)/g)).toHaveLength(1);
+  });
 });
 
 describe("readNfseSummary", () => {
@@ -249,6 +283,19 @@ describe("isNfseOfDps", () => {
 });
 
 describe("readNfseEventSummary", () => {
+  const KEY = "42082032211222333000181000000000000226100953785610";
+  const request = (code: string) => `<pedRegEvento><infPedReg><chNFSe>${KEY}</chNFSe><e${code}/></infPedReg></pedRegEvento>`;
+
+  // The ADN validates evento/infEvento/pedRegEvento; the summary must read that same request.
+  it("reads the registered request, not another infPedReg in the document", () => {
+    const xml = `<evento><infEvento><x><infPedReg><chNFSe>${KEY}</chNFSe><e105102/></infPedReg></x><nSeqEvento>1</nSeqEvento>${request("101101")}</infEvento></evento>`;
+    expect(readNfseEventSummary(xml)).toEqual({ accessKey: KEY, code: "101101" });
+  });
+
+  it("returns no code for a bare request, which proves nothing", () => {
+    expect(readNfseEventSummary(request("101101")).code).toBeNull();
+  });
+
   it("reads the note and the event code from a distributed cancellation", async () => {
     const { readNfseEventSummary } = await import("../src/nfse");
     const xml =

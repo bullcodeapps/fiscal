@@ -366,21 +366,24 @@ function readNfseSummary(nfseXml) {
 }
 function readNfseEventSummary(eventXml) {
   assertWellFormed(eventXml);
-  const infPedReg = findKey(parser.parse(eventXml), "infPedReg");
-  const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
-  return {
-    accessKey: String(infPedReg?.chNFSe ?? ""),
-    code: codeKey ? codeKey.slice(1) : null
-  };
+  const infPedReg = parser.parse(eventXml)?.evento?.infEvento?.pedRegEvento?.infPedReg;
+  return { accessKey: String(infPedReg?.chNFSe ?? ""), code: eventCode(infPedReg) };
+}
+function requestEventCode(requestXml) {
+  return eventCode(parseOrNull(requestXml)?.pedRegEvento?.infPedReg);
+}
+function eventCode(infPedReg) {
+  const key = Object.keys(infPedReg && typeof infPedReg === "object" ? infPedReg : {}).find((k) => /^e\d{6}$/.test(k));
+  return key ? key.slice(1) : null;
 }
 function registeredEvent(eventXml) {
   const infEvento = parseOrNull(eventXml)?.evento?.infEvento;
   const infPedReg = infEvento?.pedRegEvento?.infPedReg;
   const sequence = String(infEvento?.nSeqEvento ?? "");
-  const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
+  const code = eventCode(infPedReg);
   const accessKey = infPedReg?.chNFSe;
-  if (!/^\d+$/.test(sequence) || !codeKey || !isAccessKey(accessKey)) return null;
-  return { accessKey, code: codeKey.slice(1), sequence: Number(sequence) };
+  if (!/^\d+$/.test(sequence) || !code || !isAccessKey(accessKey)) return null;
+  return { accessKey, code, sequence: Number(sequence) };
 }
 function parseOrNull(xml) {
   try {
@@ -389,16 +392,6 @@ function parseOrNull(xml) {
   } catch {
     return null;
   }
-}
-function findKey(node, key) {
-  if (!node || typeof node !== "object") return void 0;
-  const record = node;
-  if (key in record) return record[key];
-  for (const child2 of Object.values(record)) {
-    const found = findKey(child2, key);
-    if (found !== void 0) return found;
-  }
-  return void 0;
 }
 var DPS_DIGEST = /<(?:\w+:)?Reference URI="#(DPS[0-9A-Z]{42})"[\s\S]*?<(?:\w+:)?DigestValue>([^<]+)</;
 function isNfseOfDps(nfseXml, signedDpsXml) {
@@ -511,7 +504,7 @@ function interpretEvent(response, expected) {
 }
 function interpretEventLookup(response, expected) {
   const json = parseJson(response.body);
-  if (response.status === 404 && isRecord(json?.erro)) return null;
+  if (response.status === 404 && isRecord(json?.erro) && !Array.isArray(json.erro)) return null;
   if (response.status === 200 && typeof json?.eventoXmlGZipB64 === "string") {
     return decodeEvent(json.eventoXmlGZipB64, response.status, expected);
   }
@@ -560,7 +553,7 @@ var SefinClient = class {
    * (see docs/integration.md, cancellation).
    */
   async registerEvent(accessKey, signedEventXml) {
-    const type = readNfseEventSummary(signedEventXml).code;
+    const type = requestEventCode(signedEventXml);
     if (!type) throw new Error("registerEvent: signedEventXml is not a pedRegEvento (use buildCancellation)");
     const body = JSON.stringify({
       pedidoRegistroEventoXmlGZipB64: (0, import_node_zlib2.gzipSync)(signedEventXml).toString("base64")
@@ -630,7 +623,8 @@ var C_STAT = {
   "100": "NFS-e Gerada",
   "101": "NFS-e de Substitui\xE7\xE3o Gerada",
   "102": "NFS-e de Decis\xE3o Judicial ou Administrativa",
-  "103": "NFS-e Avulsa"
+  "103": "NFS-e Avulsa",
+  "107": "NFS-e MEI"
 };
 var FIN_NFSE = {
   "0": "NFS-e regular",
@@ -762,7 +756,7 @@ var parser2 = new import_fast_xml_parser3.XMLParser({
   parseTagValue: false,
   isArray: (name) => name === "bensMoveis"
 });
-function buildDanfseModel(nfseXml) {
+function buildDanfseModel(nfseXml, options = {}) {
   assertWellFormed(nfseXml);
   const root = parser2.parse(nfseXml);
   const inf = child(root.NFSe, "infNFSe");
@@ -991,6 +985,9 @@ function buildDanfseModel(nfseXml) {
     text(infoCompl, "idDocTec") && `Doc. Tec.: ${text(infoCompl, "idDocTec")}`,
     text(infoCompl, "xPed") && `N\xFAm. Ped.: ${text(infoCompl, "xPed")}`,
     text(inf, "xOutInf") && `Inf. A. T. Mun.: ${text(inf, "xOutInf")}`,
+    text(child(serv, "obra"), "cObra") && `Cod. Obra: ${text(child(serv, "obra"), "cObra")}`,
+    text(child(serv, "obra"), "inscImobFisc") && `Insc. Imob.: ${text(child(serv, "obra"), "inscImobFisc")}`,
+    text(child(serv, "atvEvento"), "idAtvEvt") && `Cod. Evt.: ${text(child(serv, "atvEvento"), "idAtvEvt")}`,
     ...(dpsIbsCbs?.bensMoveis ?? []).map(
       (good) => `Bem M\xF3vel: NCM ${or(text(good, "cNCMBemMovel"))} - ${or(text(good, "xNCMBemMovel"))} (${or(text(good, "qtdNCMBemMovel"))})`
     )
@@ -1000,10 +997,11 @@ function buildDanfseModel(nfseXml) {
     accessKey,
     qrCodeUrl: `${QR_CODE_BASE}${accessKey}`,
     header: {
-      municipality: `Munic\xEDpio: ${or(text(inf, "xLocEmi"))} - ${or(text(child(emit, "enderNac"), "UF"))}`,
+      municipality: text(cServ, "cTribNac")?.startsWith("99") ? null : `Munic\xEDpio: ${or(text(inf, "xLocEmi"))} / ${or(text(child(emit, "enderNac"), "UF"))}`,
       generator: `Ambiente Gerador: ${describe(AMB_GER, text(inf, "ambGer"))}`,
       environment: `Tipo de Ambiente: ${describe(TP_AMB, tpAmb)}`
     },
+    watermark: options.situation === "cancelled" ? "CANCELADA" : options.situation === "substituted" ? "SUBSTITU\xCDDA" : null,
     withoutLegalValue: tpAmb === "2",
     identification: [
       [
@@ -1094,8 +1092,8 @@ function block(doc, item, top) {
   });
   return top + Math.max(item.rows.length, 1) * item.rowHeight;
 }
-async function renderDanfse(nfseXml) {
-  const model = buildDanfseModel(nfseXml);
+async function renderDanfse(nfseXml, options = {}) {
+  const model = buildDanfseModel(nfseXml, options);
   const qrCode = await import_qrcode.default.toBuffer(model.qrCodeUrl, { margin: 0, width: 240, errorCorrectionLevel: "M" });
   const doc = new import_pdfkit.default({ size: "A4", margin: 0, info: { Title: `DANFSe ${model.accessKey}` } });
   const chunks = [];
@@ -1108,7 +1106,7 @@ async function renderDanfse(nfseXml) {
   if (model.withoutLegalValue) {
     write(doc, "NFS-e SEM VALIDADE JUR\xCDDICA", 5.41, 1.1, 10.19, { font: BOLD, size: 9, color: RED, align: "center" });
   }
-  write(doc, model.header.municipality, 15.62, 0.4, 5.09, { size: 8 });
+  if (model.header.municipality) write(doc, model.header.municipality, 15.62, 0.4, 5.09, { size: 8 });
   write(doc, model.header.generator, 15.62, 0.97, 5.09, { size: 6 });
   write(doc, model.header.environment, 15.62, 1.22, 5.09, { size: 6 });
   line(doc, 1.46);
@@ -1151,6 +1149,12 @@ async function renderDanfse(nfseXml) {
     height: Math.max(pt(BOTTOM - y - 0.5), 0),
     ellipsis: true
   });
+  if (model.watermark) {
+    const [x, y2] = [pt(10.5), pt(PAGE_HEIGHT_CM / 2)];
+    doc.save().rotate(-55, { origin: [x, y2] }).font(REGULAR).fontSize(90).fillColor("#a6a6a6").fillOpacity(0.6);
+    doc.text(model.watermark, x - doc.widthOfString(model.watermark) / 2, y2 - 45, { lineBreak: false });
+    doc.restore();
+  }
   doc.lineWidth(1).rect(pt(MARGIN), pt(MARGIN), pt(21 - 2 * MARGIN), pt(PAGE_HEIGHT_CM - 2 * MARGIN)).stroke("#000000");
   doc.end();
   return done;
@@ -1164,7 +1168,8 @@ function buildCancellation(input, certificate) {
   if (!/^[0-9A-Z]{50}$/.test(input.accessKey)) throw new RangeError("accessKey must be the 50-character chave de acesso");
   if (!/^[0-9A-Z]{14}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits or uppercase letters");
   const description = input.description.trim();
-  if (description.length < 15 || description.length > 255) {
+  const characters = [...description].length;
+  if (characters < 15 || characters > 255) {
     throw new RangeError("A justificativa do cancelamento deve ter entre 15 e 255 caracteres.");
   }
   const xml = `<pedRegEvento xmlns="${NAMESPACE2}" versao="${LAYOUT_VERSION2}"><infPedReg Id="PRE${input.accessKey}${CANCELLATION}">` + leaf("tpAmb", input.environment === "production" ? 1 : 2) + leaf("verAplic", input.verAplic) + leaf("dhEvento", brazilDateTime(input.at)) + leaf("CNPJAutor", input.authorCnpj) + leaf("chNFSe", input.accessKey) + `<e${CANCELLATION}><xDesc>Cancelamento de NFS-e</xDesc>` + leaf("cMotivo", input.reason) + `<xMotivo>${escapeXml(description)}</xMotivo></e${CANCELLATION}></infPedReg></pedRegEvento>`;
@@ -1210,7 +1215,7 @@ function interpretDistribution(response) {
   if (response.status === 429) throw new AdnError("rate_limited", [], 429);
   const json = parseJson2(response.body);
   const status = json?.StatusProcessamento;
-  if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
+  if (status === "NENHUM_DOCUMENTO_LOCALIZADO" && (response.status === 404 || response.status === 200)) return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     if (!Array.isArray(json?.LoteDFe)) throw new AdnError("unavailable", [], response.status);
     const batch = json.LoteDFe;

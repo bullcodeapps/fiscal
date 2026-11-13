@@ -49,6 +49,12 @@ describe("buildCancellation", () => {
     );
   });
 
+  // The schema counts characters; an emoji is two UTF-16 units in JavaScript.
+  it("counts characters, not UTF-16 units, in the justification", () => {
+    expect(() => buildCancellation({ ...input, description: "😀".repeat(8) }, certificate)).toThrow(RangeError);
+    expect(() => buildCancellation({ ...input, description: "😀".repeat(128) }, certificate)).not.toThrow();
+  });
+
   it.each(["curto demais", "x".repeat(256)])("rejects a justification outside 15-255 characters", (description) => {
     expect(() => buildCancellation({ ...input, description }, certificate)).toThrow(RangeError);
   });
