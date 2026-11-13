@@ -52,11 +52,11 @@ interface TakerBase {
 
 export type NationalTaker = TakerBase &
   ({ CNPJ: string } | { CPF: string }) & {
-    /** Mandatory whenever the DPS declares IBS/CBS (E0239). */
+    /** Mandatory when the IBS/CBS incidence falls on the taker's address in Brazil, which depends on `cIndOp` (E0239). */
     end?: Address;
   };
 
-/** A taker abroad. Sefin requires its foreign address (E0223). */
+/** A taker abroad. Sefin requires its foreign address (E0242). */
 export type ForeignTaker = TakerBase &
   (
     /** Tax ID issued abroad. */
@@ -103,7 +103,7 @@ export interface Service {
   /** Mandatory whenever the DPS declares IBS/CBS (E0322). 9 digits, no dots. */
   cNBS?: string;
   xDescServ: string;
-  /** Present when the taker is abroad (export of services). */
+  /** Required for a taker abroad, a service abroad (`cPaisPrestacao`) or `tribISSQN` 3 (E0330). */
   comExt?: ForeignTrade;
 }
 
@@ -116,7 +116,7 @@ export interface MovableGood {
 
 export interface IbsCbs {
   indFinal: 0 | 1;
-  /** Código indicador da operação (Anexo VII). */
+  /** Código indicador da operação. The table depends on the environment: see docs/codes.md. */
   cIndOp: string;
   /** 0: the taker is the recipient. A different recipient (1, with the `dest` group) is not supported yet. */
   indDest: 0;

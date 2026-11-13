@@ -7,7 +7,8 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
 - Docs that ship in the package (`docs/`): integration guide with a reference implementation, `DpsInput`
   reference, error reference. AGENTS.md, an Agent Skill and TSDoc on the main entry points.
 - `docs/codes.md`: where to look up each tax code, municipality adhesion, common Sefin rejection codes.
-- Alphanumeric CNPJ (`[0-9A-Z]{14}`) in `loadCertificate`, `buildDps`, `buildCancellation` and `AdnClient`.
+- Alphanumeric CNPJ (`[0-9A-Z]{14}`) in `loadCertificate`, `buildDps`, `buildCancellation` and `AdnClient`. Only
+  produção restrita (NT 009) accepts it today; the produção schema in force is digits only.
 - `buildDps` rejects a `cLocEmi`, `prest.CNPJ`, `serie` or `nDPS` with the wrong length or characters, and
   `buildCancellation` does the same for `accessKey` and `authorCnpj`. **Breaking** for inputs with masked
   values (for example a CNPJ with dots), which Sefin rejected anyway (E0004).
@@ -32,7 +33,13 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
 - Event answers are verified: `registerEvent` and `findEvent` return only well-formed event XML for the same
   access key and event type, and `findEvent` returns null only for Sefin's JSON 404. Malformed NFS-e XML from
   `emit` / `getNfseXml` is `unavailable`. `registerEvent` throws if given anything but a `pedRegEvento`.
-- `AdnClient`: a page entry that is not an object, or a document without `TipoDocumento`, is `unavailable`.
+- Every access key is bound to the XML it names: `emit`, `getNfseXml` and the ADN require a valid chave equal
+  to the note's own `infNFSe` Id, and `findAccessKeyByDpsId` validates the key format. `findEvent` returns null
+  only for Sefin's error JSON and requires the registered `infEvento` with the requested sequence. Otherwise
+  `unavailable`.
+- `AdnClient`: a page entry that is not an object, a document without `TipoDocumento`, a page without a
+  `LoteDFe` array, NSUs not strictly increasing, or invalid UTF-8 is `unavailable`. `doc.accessKey` of a note
+  comes from its XML.
 - `buildDps` requires exactly one taker identity (`CNPJ`, `CPF`, `NIF` or `cNaoNIF`).
 - DANFSe shows `cPaisPrestacao` / `cPaisResult` instead of BR for services abroad and exports.
 - MIT license.

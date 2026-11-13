@@ -31,7 +31,7 @@ Conventions:
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `CNPJ` | `string` | 14 digits or uppercase letters (alphanumeric CNPJ), no mask. Must equal `certificate.cnpj`. |
+| `CNPJ` | `string` | 14 digits or uppercase letters (alphanumeric CNPJ), no mask. Must equal `certificate.cnpj`. Only produção restrita (NT 009 schema) accepts an alphanumeric CNPJ today: the produção schema in force (`nfse-esquemas_xsd-v1-01-20260209`) is digits only, so such a provider cannot issue in produção until NT 009 is deployed there. |
 | `IM` | `string` | Optional. Municipal registration, when the municipality requires it. |
 | `regTrib.opSimpNac` | `1 \| 2 \| 3 \| 4` | 1 Não optante, 2 MEI, 3 ME/EPP (Simples Nacional), 4 Pendente. |
 | `regTrib.regApTribSN` | `1 \| 2 \| 3` | Required when `opSimpNac` is 3. 1: ISSQN paid inside the Simples Nacional DAS. |
@@ -116,7 +116,7 @@ subject to sanctions. Send `IBSCBS` whenever the issuer is in one of the groups 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `indFinal` | `0 \| 1` | 1 when the taker is the final consumer. |
-| `cIndOp` | `string` | Operation indicator code (Anexo VII). |
+| `cIndOp` | `string` | Operation indicator code. The table depends on the environment: see [codes.md](./codes.md). |
 | `indDest` | `0` | The taker is the recipient. Only `0` is supported: the group for a different recipient is not built yet. |
 | `bensMoveis` | `MovableGood[]` | Required for `cTribNac` 99.04.01 (rental of movable goods): `{ cNCMBemMovel, xNCMBemMovel, qtdNCMBemMovel }`. |
 | `CST` | `string` | Tax situation code, 3 digits. |

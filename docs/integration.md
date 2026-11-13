@@ -39,6 +39,8 @@ const certificate = loadCertificate(readFileSync("cert.pfx"), password);
 
 `error.message` is in Portuguese and safe to show to the certificate owner.
 Use `certificate.cnpj` as `prest.CNPJ`. Sefin refuses a DPS whose provider is not the certificate's CNPJ.
+An alphanumeric CNPJ is accepted only by produção restrita (NT 009 schema) today: the produção schema in force is
+digits only, so such a provider cannot issue in produção until NT 009 is deployed there.
 
 Security: `loadCertificate` only extracts data. It does not validate the ICP-Brasil chain, so `certificate.cnpj`
 is not proof that the uploader owns the company. Never log the certificate, its password or `privateKeyPem`.
@@ -224,9 +226,14 @@ function failure(e: unknown): Partial<NoteRow> & { status: Status } {
   };
 }
 
+/** The Sefin calls `issue` makes. Pass a real `SefinClient` or a test fake. */
+type IssueClient = Pick<SefinClient, "emit" | "findAccessKeyByDpsId" | "getNfseXml">;
+
 export async function issue(
   store: Store,
   id: string,
+  client: IssueClient,
+  /** Signs a new DPS. Use the same certificate the client uses for mTLS. */
   certificate: Certificate,
   /** Builds a NEW DpsInput from current app data, with `nDPS: row.nDPS`. Only called when no signed DPS is stored. */
   inputFor: (row: NoteRow) => DpsInput,
@@ -235,7 +242,6 @@ export async function issue(
   if (!lease) return (await store.load(id)).status;
   const save = (values: Partial<NoteRow>) => store.patch(id, lease, values);
   const row = await store.load(id);
-  const client = new SefinClient({ environment: row.environment, certificate });
   let signed = row.signedDpsXml;
   let accessKey = row.accessKey;
   let nfseXml: string | null = null;
@@ -290,6 +296,12 @@ export async function issue(
   await save({ status: "authorized", nfseXml, number: readNfseSummary(nfseXml).number, messages: null });
   return "authorized";
 }
+
+/** Call site. Build one client per environment and certificate, and reuse it across calls. */
+export function issuer(environment: Environment, certificate: Certificate, store: Store, inputFor: (row: NoteRow) => DpsInput) {
+  const client = new SefinClient({ environment, certificate });
+  return (id: string) => issue(store, id, client, certificate, inputFor);
+}
 ```
 
 The stale-claim window (10 minutes here) must be longer than the slowest Sefin call. `timeoutMs` is an idle
@@ -328,8 +340,8 @@ A cancellation can end with an unknown outcome, so it follows the issuance patte
 signed request, send under a lease, and look the event up with `findEvent` before resending or giving up.
 
 At request time, build the signed event first. `buildCancellation` throws `RangeError` on a bad description
-(15 to 255 characters) or key: answer the user and change nothing. Otherwise move the row from `authorized` to
-`cancelling` (compare-and-set) with `cancelEventXml` set and `cancelSentAt` null.
+(15 to 255 characters) or key: answer the user and change nothing. Otherwise call `requestCancellation`, one
+atomic write that moves the row from `authorized` to `cancelling` and stores `cancelEventXml`.
 
 ```ts
 import type { Certificate, Environment } from "@bullcode/fiscal";
@@ -347,6 +359,11 @@ interface CancelRow {
 
 interface CancelStore {
   load(id: string): Promise<CancelRow>;
+  /**
+   * ONE atomic write: compare-and-set "authorized" to "cancelling", storing `cancelEventXml` and clearing
+   * `cancelSentAt`. False when the row is not "authorized".
+   */
+  requestCancellation(id: string, cancelEventXml: string): Promise<boolean>;
   /** Lease on a "cancelling" row, with the same rules as issuance (a stale lease can be taken over). */
   claim(id: string): Promise<string | null>;
   patch(id: string, lease: string, values: Partial<CancelRow>): Promise<void>;
@@ -354,9 +371,19 @@ interface CancelStore {
 
 const CANCELLATION = "101101";
 
-/** Request time. Throws RangeError on invalid input: answer the user, no state change. */
-export function cancellationRequest(row: CancelRow, certificate: Certificate, reason: CancellationReason, description: string) {
-  return buildCancellation(
+/**
+ * Request time. Throws RangeError on invalid input: answer the user, no state change. False when the note is not
+ * "authorized" (already cancelling or cancelled).
+ */
+export async function requestCancel(
+  store: CancelStore,
+  id: string,
+  certificate: Certificate,
+  reason: CancellationReason,
+  description: string,
+): Promise<boolean> {
+  const row = await store.load(id);
+  const eventXml = buildCancellation(
     {
       environment: row.environment,
       accessKey: row.accessKey,
@@ -368,15 +395,18 @@ export function cancellationRequest(row: CancelRow, certificate: Certificate, re
     },
     certificate,
   );
+  return store.requestCancellation(id, eventXml);
 }
 
+/** The Sefin calls the worker makes. Pass a real `SefinClient` or a test fake. */
+type CancelClient = Pick<SefinClient, "registerEvent" | "findEvent">;
+
 /** Worker. Safe to call again for any row in "cancelling". */
-export async function cancel(store: CancelStore, id: string, certificate: Certificate) {
+export async function cancel(store: CancelStore, id: string, client: CancelClient) {
   const lease = await store.claim(id);
   if (!lease) return (await store.load(id)).status;
   const save = (values: Partial<CancelRow>) => store.patch(id, lease, values);
   const row = await store.load(id);
-  const client = new SefinClient({ environment: row.environment, certificate });
   const cancelled = async (eventXml: string) => {
     await save({ status: "cancelled", cancellationXml: eventXml, messages: null });
     return "cancelled";
@@ -472,8 +502,9 @@ export async function importFromAdn(
 What `apply` does, inside its transaction, failing when `lease` is no longer held:
 
 - Store every document's raw `doc.xml` by `doc.nsu`, whatever its type.
-- `doc.type === "NFSE"`: also upsert the note by `doc.accessKey` with `readNfseSummary(doc.xml)`. A note the app
-  already tracks gets an idempotent update; one issued elsewhere is new.
+- `doc.type === "NFSE"`: also upsert the note by `doc.accessKey` (read from the note's own XML, so it is safe as
+  the key) with `readNfseSummary(doc.xml)`. A note the app already tracks gets an idempotent update; one issued
+  elsewhere is new. For an event, `doc.accessKey` is the envelope's key or null: use the summary's `accessKey`.
 - Any other type: read it with `readNfseEventSummary(doc.xml)`. When its `code` is in `CANCELLING_EVENTS`, set the
   note with that `accessKey` to `cancelled`, from `authorized` or `cancelling`, and clear the note's lease in the
   same update, so a stale worker's later fenced write fails instead of overwriting `cancelled`. When `code` is
@@ -484,7 +515,8 @@ What `apply` does, inside its transaction, failing when `lease` is no longer hel
 - Move the cursor only forward: `UPDATE ... SET last_nsu = $nsu WHERE last_nsu < $nsu`. If the transaction
   fails, the cursor does not move and the next run replays the document.
 
-The library does not detect NSU gaps (documents the ADN skips). If the app needs that, track missing NSUs.
+`fetchDocuments` rejects a page whose NSUs are not strictly increasing (`unavailable`), so `apply` always sees NSU
+order. The library does not detect NSU gaps (documents the ADN skips). If the app needs that, track missing NSUs.
 
 `AdnError.kind`: `rate_limited` (HTTP 429, stop and resume later), `rejected` (the certificate may not query
 this CNPJ), `unavailable` (retry later, also for oversized or malformed answers). Run the import on a schedule,
@@ -501,22 +533,21 @@ node scripts/smoke-export-restricted.mjs cert.pfx password.txt   # foreign taker
 node scripts/cancel-restricted.mjs cert.pfx password.txt <accessKey>
 ```
 
-For unit tests in your app, inject a fake with the `SefinClient` methods you use
-(`Pick<SefinClient, "emit" | "findAccessKeyByDpsId" | "getNfseXml">`) and throw `new SefinError(kind, messages, httpStatus)`
-to drive each branch of step 6.
+For unit tests in your app, pass a fake to `issue` (`IssueClient`) and `cancel` (`CancelClient`) instead of a
+`SefinClient`, and throw `new SefinError(kind, messages, httpStatus)` to drive each branch of steps 6 and 11.
 
 ## Checklist
 
 - [ ] Issuing municipality accepts the national emitters (codes.md)
 - [ ] Certificate and password stored encrypted and never logged, `validTo` monitored; untrusted uploads parsed in a worker thread with a time limit
 - [ ] `prest.CNPJ` equals `certificate.cnpj`
-- [ ] `nDPS` from an atomic counter per environment and `serie`, fixed for the row's life
+- [ ] `nDPS` from an atomic counter per environment, provider CNPJ and `serie`, fixed for the row's life
 - [ ] Row created and signed DPS saved before the first `emit`
 - [ ] `sentAt` saved before each `emit`, `accessKey` saved alone right after
 - [ ] `rejected` (except E0014), certificate refusal and `unavailable` handled as in step 6
 - [ ] Reconciliation by `dpsId` before any resend, with `isNfseOfDps(nfseXml, row.signedDpsXml)` on the found note
 - [ ] One attempt per row at a time, every write fenced by the attempt's lease
 - [ ] `nfseXml` stored as personal data; DANFSe rendered from it
-- [ ] Cancellation validated with `buildCancellation` at request time; signed event and `cancelSentAt` persisted before each send; `findEvent` before any resend or final rejection
+- [ ] Cancellation validated with `buildCancellation` at request time and started with one atomic `requestCancellation`; `cancelSentAt` persisted before each send; `findEvent` before any resend or final rejection
 - [ ] ADN import: cursor and lease per (environment, CNPJ), one runner at a time, each document and a forward-only cursor in one transaction fenced by that lease; any cancelling event (101101, 105102, 105104, 305101) sets `cancelled` and clears the note's lease; never the only confirmation of the app's own notes or cancellations
 - [ ] Environment stored per note and used for queries and cancellation

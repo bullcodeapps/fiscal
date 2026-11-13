@@ -66,7 +66,7 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 | `kind: "rejected"`, a message has code `E0014` | Sefin already holds a note for this `serie` + `nDPS` | Not a rejection: reconcile with `findAccessKeyByDpsId` and check it with `isNfseOfDps` |
 | `kind: "rejected"` (any other case) | Sefin answered 4xx with error messages. Nothing was issued (or, for events, registered). | Show `messages`, fix the data, build and sign again with the same `nDPS` |
 | `kind: "unavailable"`, `httpStatus` undefined | Timeout or network failure. No answer arrived. | Treat the DPS as possibly authorized. Reconcile with `findAccessKeyByDpsId` before resending. |
-| `kind: "unavailable"`, other `httpStatus` | 5xx, or an answer the client could not trust: unknown body, malformed gzip or base64, body or decompressed XML over 10 MB, NFS-e XML that is not well-formed, an event that is not well-formed or is for another access key or event type, or a 404 that is not Sefin's JSON (for example a gateway page) | Same as above |
+| `kind: "unavailable"`, other `httpStatus` | 5xx, or an answer the client could not trust: unknown body, malformed gzip, base64 or UTF-8, body or decompressed XML over 10 MB, NFS-e XML that is not well-formed, an access key that is not a valid chave or differs from the note's own `infNFSe` Id, an event that is not well-formed, not the registered `infEvento`, for another access key, event type or sequence, or a 404 that is not Sefin's error JSON (for example a gateway page) | Same as above |
 
 `timeoutMs` (default 30000) is an inactivity timeout: the request fails when the connection stays idle that long.
 It is not a total deadline.
@@ -77,8 +77,8 @@ Per method:
 | --- | --- | --- |
 | `emit` | DPS refused | Note may exist: reconcile |
 | `registerEvent` | Event refused (already cancelled, deadline passed, ...). It is final only when `findEvent` returns null: the refusal can be the duplicate of an event that went through | Look up with `findEvent` before resending |
-| `findEvent` | 4xx with messages: retry later, never read it as "no event" | Retry later. Only `null` (Sefin's JSON 404) means the note has no such event |
-| `findAccessKeyByDpsId` | never (404 returns `null`) | Retry later |
+| `findEvent` | 4xx with messages: retry later, never read it as "no event" | Retry later. Only `null` (a 404 with Sefin's `erro` JSON) means the note has no such event |
+| `findAccessKeyByDpsId` | never (404 returns `null`) | Retry later. Also for an answer whose key is not a valid chave |
 | `getNfseXml` | 404: no note with this key in this environment. For a key you already stored (just emitted or reconciled), treat it as transient and retry | Retry later |
 
 Common Sefin codes are listed in the Anexo of the NFS-e Nacional documentation. Examples the library already
@@ -94,4 +94,4 @@ address (E0239, depends on `cIndOp`).
 | --- | --- | --- |
 | `rate_limited` | HTTP 429 | Stop and resume on the next scheduled run |
 | `rejected` | The ADN refused the query (for example the certificate is not from the queried CNPJ's root) | Check `cnpj` and the certificate |
-| `unavailable` | Timeout, network error, 5xx, an unknown body, a body over 10 MB, a page whose documents decompress to more than 10 MB in total, base64 outside the standard alphabet, malformed gzip, an NSU that is not a positive integer, a page entry that is not an object, or a document without `TipoDocumento` | Retry later from the same `lastNsu` |
+| `unavailable` | Timeout, network error, 5xx, an unknown body, a body over 10 MB, a page whose documents decompress to more than 10 MB in total, base64 outside the standard alphabet, malformed gzip, an NSU that is not a positive integer, NSUs not strictly increasing within the page, `DOCUMENTOS_LOCALIZADOS` without a `LoteDFe` array, a page entry that is not an object, a document without `TipoDocumento`, invalid UTF-8, or a note whose access key is malformed or differs from its own `infNFSe` Id | Retry later from the same `lastNsu` |
