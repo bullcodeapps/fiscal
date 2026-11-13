@@ -126,6 +126,21 @@ export function interpretEvent(response: RawResponse): string {
   );
 }
 
+/** Maps a raw answer of the event lookup to the event XML, null when there is no such event, or a SefinError. */
+export function interpretEventLookup(response: RawResponse): string | null {
+  if (response.status === 404) return null;
+  const json = parseJson(response.body);
+  if (response.status === 200 && typeof json?.eventoXmlGZipB64 === "string") {
+    return decode(json.eventoXmlGZipB64, response.status);
+  }
+  const messages = toMessages(json?.erro ?? json?.erros);
+  throw new SefinError(
+    response.status >= 400 && response.status < 500 && messages.length > 0 ? "rejected" : "unavailable",
+    messages,
+    response.status,
+  );
+}
+
 export interface SefinClientOptions {
   environment: Environment;
   /** The provider's A1, used for mTLS. */
@@ -171,6 +186,16 @@ export class SefinClient {
     });
     const response = await this.request("POST", `/nfse/${encodeURIComponent(accessKey)}/eventos`, body);
     return interpretEvent(response);
+  }
+
+  /**
+   * The registered event of this type and sequence (e.g. "101101", 1 for a cancellation), or null when
+   * the note has none. Use it before treating a cancellation as failed or resending one whose outcome
+   * is unknown.
+   */
+  async findEvent(accessKey: string, eventType: string, sequence = 1): Promise<string | null> {
+    const path = `/nfse/${encodeURIComponent(accessKey)}/eventos/${encodeURIComponent(eventType)}/${sequence}`;
+    return interpretEventLookup(await this.request("GET", path));
   }
 
   /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */

@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { assertWellFormed } from "../core/xml";
 
 export interface NfseSummary {
   accessKey: string;
@@ -42,7 +43,9 @@ const parser = new XMLParser({
 
 /** What a caller needs to confirm an existing NFS-e is the one it meant to issue. */
 export function readNfseSummary(nfseXml: string): NfseSummary {
+  assertWellFormed(nfseXml);
   const inf = parser.parse(nfseXml)?.NFSe?.infNFSe;
+  if (!inf) throw new Error("Not an NFS-e: infNFSe is missing");
   const infDps = inf?.DPS?.infDPS;
   const toma = infDps?.toma;
   const vServ = infDps?.valores?.vServPrest?.vServ;
@@ -66,6 +69,7 @@ export function readNfseSummary(nfseXml: string): NfseSummary {
 
 /** Reads an event XML distributed by the ADN (the registered event wraps the original request). */
 export function readNfseEventSummary(eventXml: string): NfseEventSummary {
+  assertWellFormed(eventXml);
   const infPedReg = findKey(parser.parse(eventXml), "infPedReg") as Record<string, unknown> | undefined;
   const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
   return {

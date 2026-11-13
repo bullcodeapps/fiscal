@@ -4,6 +4,7 @@ import {
 } from "../chunk-Q3O3QATY.js";
 
 // src/core/xml.ts
+import { XMLValidator } from "fast-xml-parser";
 function escapeXml(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
@@ -21,6 +22,10 @@ function decimal(value) {
 function brazilDateTime(date2) {
   const local = new Date(date2.getTime() - 3 * 60 * 60 * 1e3);
   return `${local.toISOString().slice(0, 19)}-03:00`;
+}
+function assertWellFormed(xml) {
+  const result = XMLValidator.validate(xml);
+  if (result !== true) throw new Error(`Malformed XML: ${result.err.msg}`);
 }
 
 // src/nfse/dps.ts
@@ -79,8 +84,6 @@ function foreignTrade(value) {
     leaf("mecAFComexP", value.mecAFComexP),
     leaf("mecAFComexT", value.mecAFComexT),
     leaf("movTempBens", value.movTempBens),
-    leaf("nDI", value.nDI),
-    leaf("nRE", value.nRE),
     leaf("mdic", value.mdic)
   );
 }
@@ -127,19 +130,16 @@ function assertExportRules(input) {
   const foreignId = toma !== void 0 && ("NIF" in toma || "cNaoNIF" in toma);
   const foreignAddress = toma?.end !== void 0 && "cPais" in toma.end;
   if (foreignId && !foreignAddress) {
-    throw new Error("toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)");
+    throw new Error("toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)");
   }
   if (foreignAddress && !foreignId) {
-    throw new Error("toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF");
+    throw new Error("toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF (E0223)");
   }
-  if (valores.tribISSQN === 3 && !serv.comExt) {
-    throw new Error("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
+  if ((foreignAddress || serv.cPaisPrestacao !== void 0 || valores.tribISSQN === 3) && !serv.comExt) {
+    throw new Error("serv: comExt is required for a taker abroad, a service abroad or an export (E0330)");
   }
   if (valores.tribISSQN === 3 && !valores.cPaisResult) {
     throw new Error("valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)");
-  }
-  if (serv.comExt && !foreignId) {
-    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF)");
   }
 }
 function buildDps(input) {
@@ -333,6 +333,19 @@ function interpretEvent(response) {
     response.status
   );
 }
+function interpretEventLookup(response) {
+  if (response.status === 404) return null;
+  const json = parseJson(response.body);
+  if (response.status === 200 && typeof json?.eventoXmlGZipB64 === "string") {
+    return decode(json.eventoXmlGZipB64, response.status);
+  }
+  const messages = toMessages(json?.erro ?? json?.erros);
+  throw new SefinError(
+    response.status >= 400 && response.status < 500 && messages.length > 0 ? "rejected" : "unavailable",
+    messages,
+    response.status
+  );
+}
 var SefinClient = class {
   baseUrl;
   agent;
@@ -362,6 +375,15 @@ var SefinClient = class {
     });
     const response = await this.request("POST", `/nfse/${encodeURIComponent(accessKey)}/eventos`, body);
     return interpretEvent(response);
+  }
+  /**
+   * The registered event of this type and sequence (e.g. "101101", 1 for a cancellation), or null when
+   * the note has none. Use it before treating a cancellation as failed or resending one whose outcome
+   * is unknown.
+   */
+  async findEvent(accessKey, eventType, sequence = 1) {
+    const path = `/nfse/${encodeURIComponent(accessKey)}/eventos/${encodeURIComponent(eventType)}/${sequence}`;
+    return interpretEventLookup(await this.request("GET", path));
   }
   /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */
   async findAccessKeyByDpsId(dpsId2) {
@@ -543,8 +565,10 @@ var parser = new XMLParser({
   isArray: (name) => name === "bensMoveis"
 });
 function buildDanfseModel(nfseXml) {
+  assertWellFormed(nfseXml);
   const root = parser.parse(nfseXml);
   const inf = child(root.NFSe, "infNFSe");
+  if (!inf) throw new Error("Not an NFS-e: infNFSe is missing");
   const infDps = child(child(inf, "DPS"), "infDPS");
   const prest = child(infDps, "prest");
   const regTrib = child(prest, "regTrib");
@@ -958,7 +982,9 @@ var parser2 = new XMLParser2({
   parseTagValue: false
 });
 function readNfseSummary(nfseXml) {
+  assertWellFormed(nfseXml);
   const inf = parser2.parse(nfseXml)?.NFSe?.infNFSe;
+  if (!inf) throw new Error("Not an NFS-e: infNFSe is missing");
   const infDps = inf?.DPS?.infDPS;
   const toma = infDps?.toma;
   const vServ = infDps?.valores?.vServPrest?.vServ;
@@ -980,6 +1006,7 @@ function readNfseSummary(nfseXml) {
   };
 }
 function readNfseEventSummary(eventXml) {
+  assertWellFormed(eventXml);
   const infPedReg = findKey(parser2.parse(eventXml), "infPedReg");
   const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
   return {

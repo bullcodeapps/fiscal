@@ -1,3 +1,5 @@
+import { XMLValidator } from "fast-xml-parser";
+
 export type XmlChild = string | false | null | undefined;
 
 export function escapeXml(value: string): string {
@@ -32,4 +34,10 @@ export function decimal(value: number | undefined): string | undefined {
 export function brazilDateTime(date: Date): string {
   const local = new Date(date.getTime() - 3 * 60 * 60 * 1000);
   return `${local.toISOString().slice(0, 19)}-03:00`;
+}
+
+/** fast-xml-parser parses truncated XML without complaint, so callers check first. */
+export function assertWellFormed(xml: string): void {
+  const result = XMLValidator.validate(xml);
+  if (result !== true) throw new Error(`Malformed XML: ${result.err.msg}`);
 }

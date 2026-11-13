@@ -1,5 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { findMunicipality } from "../../core/municipalities";
+import { assertWellFormed } from "../../core/xml";
 
 /**
  * DANFSe v2.0 content (NT 008 SE/CGNFS-e v1.02, 14/07/2026, Anexo I),
@@ -205,8 +206,10 @@ const parser = new XMLParser({
 });
 
 export function buildDanfseModel(nfseXml: string): DanfseModel {
+  assertWellFormed(nfseXml);
   const root = parser.parse(nfseXml) as Record<string, Node>;
   const inf = child(root.NFSe, "infNFSe");
+  if (!inf) throw new Error("Not an NFS-e: infNFSe is missing");
   const infDps = child(child(inf, "DPS"), "infDPS");
   const prest = child(infDps, "prest");
   const regTrib = child(prest, "regTrib");

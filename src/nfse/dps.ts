@@ -61,8 +61,8 @@ export type ForeignTaker = TakerBase &
   (
     /** Tax ID issued abroad. */
     | { NIF: string }
-    /** Reason for not informing the NIF: 0 not informed, 1 exempt, 2 not required. */
-    | { cNaoNIF: 0 | 1 | 2 }
+    /** Reason for not informing the NIF: 1 exempt, 2 not required (Sefin rejects 0, E0226). */
+    | { cNaoNIF: 1 | 2 }
   ) & {
     end: ForeignAddress;
   };
@@ -71,8 +71,8 @@ export type Taker = NationalTaker | ForeignTaker;
 
 /** Comércio exterior group (export of services). Codes follow tiposSimples_v1.01.xsd. */
 export interface ForeignTrade {
-  /** 0 Desconhecido, 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas. */
-  mdPrestacao: 0 | 1 | 2 | 3 | 4;
+  /** 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas (Sefin rejects 0, E0333). */
+  mdPrestacao: 1 | 2 | 3 | 4;
   /** 0 Sem vínculo, 1 Controlada, 2 Controladora, 3 Coligada, 4 Matriz, 5 Filial, 6 Outro, 9 Desconhecido. */
   vincPrest: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9;
   /** BACEN currency code, 3 digits (e.g. "220" for USD). */
@@ -83,10 +83,11 @@ export interface ForeignTrade {
   mecAFComexP: string;
   /** Taker's foreign trade support mechanism, 2 digits ("01" none). */
   mecAFComexT: string;
-  /** 0 Desconhecido, 1 Não, 2 Vinculada a DI, 3 Vinculada a DE. */
-  movTempBens: 0 | 1 | 2 | 3;
-  nDI?: string;
-  nRE?: string;
+  /**
+   * 1: not linked to a temporary movement of goods. 2 and 3 need import/export declaration numbers,
+   * which the two Sefin layouts name differently (nDI/nRE vs nDUIMP/nDUE); not supported yet.
+   */
+  movTempBens: 1;
   /** 0 Não enviar, 1 Enviar ao MDIC. */
   mdic: 0 | 1;
 }
@@ -262,8 +263,6 @@ function foreignTrade(value: ForeignTrade | undefined): string {
     leaf("mecAFComexP", value.mecAFComexP),
     leaf("mecAFComexT", value.mecAFComexT),
     leaf("movTempBens", value.movTempBens),
-    leaf("nDI", value.nDI),
-    leaf("nRE", value.nRE),
     leaf("mdic", value.mdic),
   );
 }
@@ -321,19 +320,16 @@ function assertExportRules(input: DpsInput): void {
   const foreignAddress = toma?.end !== undefined && "cPais" in toma.end;
 
   if (foreignId && !foreignAddress) {
-    throw new Error("toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)");
+    throw new Error("toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)");
   }
   if (foreignAddress && !foreignId) {
-    throw new Error("toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF");
+    throw new Error("toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF (E0223)");
   }
-  if (valores.tribISSQN === 3 && !serv.comExt) {
-    throw new Error("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
+  if ((foreignAddress || serv.cPaisPrestacao !== undefined || valores.tribISSQN === 3) && !serv.comExt) {
+    throw new Error("serv: comExt is required for a taker abroad, a service abroad or an export (E0330)");
   }
   if (valores.tribISSQN === 3 && !valores.cPaisResult) {
     throw new Error("valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)");
-  }
-  if (serv.comExt && !foreignId) {
-    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF)");
   }
 }
 

@@ -51,17 +51,17 @@ type ForeignTaker = TakerBase & (
 {
     NIF: string;
 }
-/** Reason for not informing the NIF: 0 not informed, 1 exempt, 2 not required. */
+/** Reason for not informing the NIF: 1 exempt, 2 not required (Sefin rejects 0, E0226). */
  | {
-    cNaoNIF: 0 | 1 | 2;
+    cNaoNIF: 1 | 2;
 }) & {
     end: ForeignAddress;
 };
 type Taker = NationalTaker | ForeignTaker;
 /** Comércio exterior group (export of services). Codes follow tiposSimples_v1.01.xsd. */
 interface ForeignTrade {
-    /** 0 Desconhecido, 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas. */
-    mdPrestacao: 0 | 1 | 2 | 3 | 4;
+    /** 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas (Sefin rejects 0, E0333). */
+    mdPrestacao: 1 | 2 | 3 | 4;
     /** 0 Sem vínculo, 1 Controlada, 2 Controladora, 3 Coligada, 4 Matriz, 5 Filial, 6 Outro, 9 Desconhecido. */
     vincPrest: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9;
     /** BACEN currency code, 3 digits (e.g. "220" for USD). */
@@ -72,10 +72,11 @@ interface ForeignTrade {
     mecAFComexP: string;
     /** Taker's foreign trade support mechanism, 2 digits ("01" none). */
     mecAFComexT: string;
-    /** 0 Desconhecido, 1 Não, 2 Vinculada a DI, 3 Vinculada a DE. */
-    movTempBens: 0 | 1 | 2 | 3;
-    nDI?: string;
-    nRE?: string;
+    /**
+     * 1: not linked to a temporary movement of goods. 2 and 3 need import/export declaration numbers,
+     * which the two Sefin layouts name differently (nDI/nRE vs nDUIMP/nDUE); not supported yet.
+     */
+    movTempBens: 1;
     /** 0 Não enviar, 1 Enviar ao MDIC. */
     mdic: 0 | 1;
 }
@@ -248,6 +249,12 @@ declare class SefinClient {
      * (see docs/integration.md, cancellation).
      */
     registerEvent(accessKey: string, signedEventXml: string): Promise<string>;
+    /**
+     * The registered event of this type and sequence (e.g. "101101", 1 for a cancellation), or null when
+     * the note has none. Use it before treating a cancellation as failed or resending one whose outcome
+     * is unknown.
+     */
+    findEvent(accessKey: string, eventType: string, sequence?: number): Promise<string | null>;
     /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */
     findAccessKeyByDpsId(dpsId: string): Promise<string | null>;
     /** The authorized NFS-e XML. `rejected` (HTTP 404) when the key does not exist in this environment. */

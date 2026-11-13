@@ -1,7 +1,16 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { loadCertificate } from "../src";
-import { buildDanfseModel, buildDps, isNfseOfDps, renderDanfse, signDps, type DpsInput } from "../src/nfse";
+import {
+  buildDanfseModel,
+  buildDps,
+  isNfseOfDps,
+  readNfseEventSummary,
+  readNfseSummary,
+  renderDanfse,
+  signDps,
+  type DpsInput,
+} from "../src/nfse";
 import { makePfx } from "./make-pfx";
 
 const dpsInput: DpsInput = {
@@ -186,6 +195,18 @@ describe("readNfseSummary", () => {
       issqnCents: 0,
       issqnInSimples: true,
     });
+  });
+});
+
+describe("malformed XML", () => {
+  // A truncated note must fail loudly, not become an empty summary that an import would store.
+  it.each([
+    ["readNfseSummary", () => readNfseSummary("<NFSe><infNFSe>")],
+    ["readNfseSummary without a note", () => readNfseSummary("<evento/>")],
+    ["buildDanfseModel", () => buildDanfseModel("<NFSe><infNFSe>")],
+    ["readNfseEventSummary", () => readNfseEventSummary("<evento><infEvento>")],
+  ])("%s throws", (_name, call) => {
+    expect(call).toThrow();
   });
 });
 

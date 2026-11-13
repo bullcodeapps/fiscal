@@ -1,7 +1,7 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { SefinError } from "../src/nfse";
-import { interpretEmission, interpretEvent } from "../src/nfse/sefin-client";
+import { interpretEmission, interpretEvent, interpretEventLookup } from "../src/nfse/sefin-client";
 
 // Response bodies follow what Sefin produção restrita returned on 2026-10-26.
 describe("interpretEmission", () => {
@@ -110,5 +110,34 @@ describe("interpretEvent", () => {
     expect((error as SefinError).messages).toEqual([
       { code: "E0840", description: "Cancelamento já vinculado à NFS-e." },
     ]);
+  });
+});
+
+// GET /nfse/{chave}/eventos/{tipo}/{seq}: 200 carries the same body as the POST (EventosPostResponseSucesso),
+// 404 means no such event (OpenAPI captured from produção restrita).
+describe("interpretEventLookup", () => {
+  it("decodes a registered event", () => {
+    const eventXml = "<evento><infEvento/></evento>";
+    expect(
+      interpretEventLookup({ status: 200, body: JSON.stringify({ tipoAmbiente: 2, eventoXmlGZipB64: gzipSync(eventXml).toString("base64") }) }),
+    ).toBe(eventXml);
+  });
+
+  it("returns null when the note has no such event", () => {
+    expect(interpretEventLookup({ status: 404, body: JSON.stringify({ erro: { codigo: "E404", descricao: "Nenhum evento" } }) })).toBeNull();
+  });
+
+  // An unknown answer must never read as "no event": the caller would resend or revert a cancellation.
+  it.each([
+    { scenario: "a 200 without the event", response: { status: 200, body: "{}" } },
+    { scenario: "a server error", response: { status: 502, body: "" } },
+  ])("treats $scenario as unavailable", ({ response }) => {
+    let error: unknown;
+    try {
+      interpretEventLookup(response);
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect((error as SefinError).kind).toBe("unavailable");
   });
 });

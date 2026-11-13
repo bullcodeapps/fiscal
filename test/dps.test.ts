@@ -118,41 +118,44 @@ describe("export of services", () => {
 
   it.each([
     {
-      name: "a NIF taker without a foreign address (E0223)",
+      name: "a NIF taker without a foreign address (E0242)",
       toma: { NIF: "98-7654321", xNome: "ACME INC" } as Taker,
-      message: "toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)",
+      message: "toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)",
     },
     {
-      name: "a cNaoNIF taker with a national address (E0223)",
+      name: "a cNaoNIF taker with a national address (E0242)",
       toma: { cNaoNIF: 2, xNome: "ACME INC", end: accepted.toma!.end } as unknown as Taker,
-      message: "toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)",
+      message: "toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)",
     },
     {
       name: "a national taker with a foreign address",
       toma: { CNPJ: "00000000000191", xNome: "BANCO DO BRASIL SA", end: foreignAddress } as Taker,
-      message: "toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF",
-    },
-    {
-      name: "comExt with a national taker",
-      toma: accepted.toma,
-      message: "serv: comExt requires a taker abroad (NIF or cNaoNIF)",
-    },
-    {
-      name: "comExt with no taker",
-      toma: undefined,
-      message: "serv: comExt requires a taker abroad (NIF or cNaoNIF)",
+      message: "toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF (E0223)",
     },
   ])("rejects $name", ({ toma, message }) => {
     expect(() => buildDps({ ...exported, toma })).toThrow(message);
   });
 
-  it("rejects tribISSQN 3 without comExt (E0330)", () => {
-    expect(() =>
-      buildDps({ ...exported, serv: { ...exported.serv, comExt: undefined } }),
-    ).toThrow("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
+  // Sefin requires comExt for a taker abroad, a service abroad or tribISSQN 3 (E0330).
+  it.each([
+    { name: "an export (tribISSQN 3)", input: { ...exported, serv: { ...exported.serv, comExt: undefined } } },
+    {
+      name: "a taker abroad",
+      input: { ...exported, valores: accepted.valores, serv: { ...exported.serv, comExt: undefined } },
+    },
+    {
+      name: "a service performed abroad for a Brazilian taker",
+      input: { ...accepted, serv: { ...accepted.serv, cLocPrestacao: undefined, cPaisPrestacao: "US" } },
+    },
+  ])("requires comExt for $name (E0330)", ({ input }) => {
+    expect(() => buildDps(input)).toThrow("serv: comExt is required for a taker abroad, a service abroad or an export (E0330)");
   });
 
-  // Sefin produção answered E0590 for an export to a US taker without it, on 2026-11-13.
+  it("accepts comExt for a service performed abroad for a Brazilian taker", () => {
+    const input = { ...accepted, serv: { ...accepted.serv, cLocPrestacao: undefined, cPaisPrestacao: "US", comExt: exported.serv.comExt } };
+    expect(buildDps(input).xml).toContain("<comExt>");
+  });
+
   it("rejects an export without the country of the result (E0590)", () => {
     expect(() =>
       buildDps({ ...exported, valores: { ...exported.valores, cPaisResult: undefined } }),
