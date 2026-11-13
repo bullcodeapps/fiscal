@@ -171,6 +171,9 @@ function assertExportRules(input) {
   if (valores.tribISSQN === 3 && !serv.comExt) {
     throw new Error("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
   }
+  if (valores.tribISSQN === 3 && !valores.cPaisResult) {
+    throw new Error("valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)");
+  }
   if (serv.comExt && toma && !foreignId) {
     throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF");
   }
@@ -215,6 +218,7 @@ function buildDps(input) {
       group(
         "tribMun",
         leaf("tribISSQN", valores.tribISSQN),
+        leaf("cPaisResult", valores.cPaisResult),
         leaf("tpRetISSQN", valores.tpRetISSQN),
         leaf("pAliq", decimal(valores.pAliq))
       ),

@@ -81,7 +81,7 @@ const exportDps = (environment: Environment, toma: DpsInput["toma"]): DpsInput =
       mdic: 0,
     },
   },
-  valores: { vServ: 10000, tribISSQN: 3, tpRetISSQN: 1, totTrib: { pTotTribSN: 6 } },
+  valores: { vServ: 10000, tribISSQN: 3, cPaisResult: "US", tpRetISSQN: 1, totTrib: { pTotTribSN: 6 } },
 });
 
 describe("Sefin schemas", () => {

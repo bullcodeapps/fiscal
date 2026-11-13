@@ -132,6 +132,8 @@ interface Values {
     vServ: number;
     /** 1 Tributável, 2 Imunidade, 3 Exportação, 4 Não incidência. */
     tribISSQN: 1 | 2 | 3 | 4;
+    /** ISO code of the country where the result of an exported service happens; Sefin requires it on exports (E0590). */
+    cPaisResult?: string;
     /** 1 Não retido, 2 Retido pelo tomador, 3 Retido pelo intermediário. */
     tpRetISSQN: 1 | 2 | 3;
     /** ISS rate in %, only when the municipality does not fix it. */
