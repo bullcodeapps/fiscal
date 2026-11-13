@@ -125,6 +125,12 @@ function document(node: Node): string {
   return or(text(node, "NIF"));
 }
 
+/** "Place / UF / Country" (NT 008): a foreign country replaces BR and has no UF. */
+function place(name: string | undefined, uf: string | undefined, country: string | undefined): string {
+  if (country) return `${or(name)} / ${EMPTY} / ${country}`;
+  return name ? `${name} / ${or(uf)} / BR` : EMPTY;
+}
+
 /** "dd/mm/aaaa hh:mm:ss" exactly as stamped, without timezone shifts. */
 function dateTime(value: string | undefined): string {
   const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2}:\d{2})/);
@@ -308,7 +314,7 @@ export function buildDanfseModel(nfseXml: string): DanfseModel {
         { label: "Código da NBS", value: cNbs ? cNbs.replace(/^(\d)(\d{4})(\d{2})(\d{2})$/, "$1.$2.$3.$4") : EMPTY, col: 2 },
         {
           label: "Local da Prestação / Sigla UF / País",
-          value: text(inf, "xLocPrestacao") ? `${text(inf, "xLocPrestacao")} / ${or(prestacaoUf)} / BR` : EMPTY,
+          value: place(text(inf, "xLocPrestacao"), prestacaoUf, text(child(serv, "locPrest"), "cPaisPrestacao")),
           col: 3,
         },
       ],
@@ -331,7 +337,7 @@ export function buildDanfseModel(nfseXml: string): DanfseModel {
         { label: "Tipo de Tributação do ISSQN", value: describe(TRIB_ISSQN, tribIssqn), col: 1 },
         {
           label: "Município / Sigla UF / País de Incidência do ISSQN",
-          value: text(inf, "xLocIncid") ? `${text(inf, "xLocIncid")} / ${or(incidUf)} / BR` : EMPTY,
+          value: place(text(inf, "xLocIncid"), incidUf, text(tribMun, "cPaisResult")),
           col: 2,
           span: 2,
         },

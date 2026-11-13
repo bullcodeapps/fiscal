@@ -2,7 +2,9 @@ import type https from "node:https";
 import { gzipSync } from "node:zlib";
 import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
+import { assertWellFormed } from "../core/xml";
 import { gunzipBase64, mtlsAgent, request, type RawResponse } from "./http";
+import { readNfseEventSummary } from "./summary";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://sefin.nfse.gov.br/SefinNacional",
@@ -55,9 +57,11 @@ export interface IssuedNfse {
 // `erro` (object or array) with lowercase keys.
 type RawMessage = Record<string, unknown>;
 
+const isRecord = (value: unknown): value is RawMessage => typeof value === "object" && value !== null;
+
 function toMessages(raw: unknown): SefinMessage[] {
-  const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
-  return (list as RawMessage[]).map((m) => {
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.filter(isRecord).map((m) => {
     const complement = m.Complemento ?? m.complemento;
     return {
       code: String(m.Codigo ?? m.codigo ?? ""),
@@ -76,13 +80,32 @@ function parseJson(body: string): Record<string, unknown> | null {
   }
 }
 
-/** A payload that cannot be decoded is not a definitive answer. */
+/** A payload that cannot be decoded into well-formed XML is not a definitive answer. */
 function decode(gzipB64: string, httpStatus: number): string {
   try {
-    return gunzipBase64(gzipB64)[0];
+    const xml = gunzipBase64(gzipB64)[0];
+    assertWellFormed(xml);
+    return xml;
   } catch {
     throw new SefinError("unavailable", [], httpStatus);
   }
+}
+
+/** The note and event type an event request or lookup is about. */
+export interface EventRef {
+  accessKey: string;
+  /** Event code without the "e", e.g. "101101" for a cancellation. */
+  type: string;
+}
+
+/** An event Sefin returns must be the one asked for, or it proves nothing. */
+function decodeEvent(gzipB64: string, httpStatus: number, expected: EventRef): string {
+  const xml = decode(gzipB64, httpStatus);
+  const event = readNfseEventSummary(xml);
+  if (event.accessKey !== expected.accessKey || event.code !== expected.type) {
+    throw new SefinError("unavailable", [], httpStatus);
+  }
+  return xml;
 }
 
 /** Maps a raw Sefin answer to a result or a SefinError. */
@@ -113,10 +136,10 @@ export function interpretEmission(response: RawResponse): IssuedNfse {
 }
 
 /** Maps a raw answer of the event endpoint to the event XML or a SefinError. */
-export function interpretEvent(response: RawResponse): string {
+export function interpretEvent(response: RawResponse, expected: EventRef): string {
   const json = parseJson(response.body);
   if (response.status >= 200 && response.status < 300 && typeof json?.eventoXmlGZipB64 === "string") {
-    return decode(json.eventoXmlGZipB64, response.status);
+    return decodeEvent(json.eventoXmlGZipB64, response.status, expected);
   }
   const messages = toMessages(json?.erro ?? json?.erros);
   throw new SefinError(
@@ -127,11 +150,12 @@ export function interpretEvent(response: RawResponse): string {
 }
 
 /** Maps a raw answer of the event lookup to the event XML, null when there is no such event, or a SefinError. */
-export function interpretEventLookup(response: RawResponse): string | null {
-  if (response.status === 404) return null;
+export function interpretEventLookup(response: RawResponse, expected: EventRef): string | null {
   const json = parseJson(response.body);
+  // Only Sefin's own JSON 404 means "no event"; a gateway page with the same status proves nothing.
+  if (response.status === 404 && json) return null;
   if (response.status === 200 && typeof json?.eventoXmlGZipB64 === "string") {
-    return decode(json.eventoXmlGZipB64, response.status);
+    return decodeEvent(json.eventoXmlGZipB64, response.status, expected);
   }
   const messages = toMessages(json?.erro ?? json?.erros);
   throw new SefinError(
@@ -181,11 +205,13 @@ export class SefinClient {
    * (see docs/integration.md, cancellation).
    */
   async registerEvent(accessKey: string, signedEventXml: string): Promise<string> {
+    const type = readNfseEventSummary(signedEventXml).code;
+    if (!type) throw new Error("registerEvent: signedEventXml is not a pedRegEvento (use buildCancellation)");
     const body = JSON.stringify({
       pedidoRegistroEventoXmlGZipB64: gzipSync(signedEventXml).toString("base64"),
     });
     const response = await this.request("POST", `/nfse/${encodeURIComponent(accessKey)}/eventos`, body);
-    return interpretEvent(response);
+    return interpretEvent(response, { accessKey, type });
   }
 
   /**
@@ -195,7 +221,7 @@ export class SefinClient {
    */
   async findEvent(accessKey: string, eventType: string, sequence = 1): Promise<string | null> {
     const path = `/nfse/${encodeURIComponent(accessKey)}/eventos/${encodeURIComponent(eventType)}/${sequence}`;
-    return interpretEventLookup(await this.request("GET", path));
+    return interpretEventLookup(await this.request("GET", path), { accessKey, type: eventType });
   }
 
   /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */

@@ -51,9 +51,11 @@ function parseJson(body: string): Record<string, unknown> | null {
   }
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+
 function toMessages(raw: unknown): AdnMessage[] {
-  const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
-  return (list as Record<string, unknown>[]).map((m) => ({
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.filter(isRecord).map((m) => ({
     code: String(m.Codigo ?? m.codigo ?? ""),
     description: String(m.Descricao ?? m.descricao ?? ""),
   }));
@@ -68,19 +70,25 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
   // An empty queue answers 404 with this status.
   if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
-    const batch = Array.isArray(json?.LoteDFe) ? (json.LoteDFe as Record<string, unknown>[]) : [];
-    const nsus = batch.map((doc) => Number(doc.NSU));
+    const batch: unknown[] = Array.isArray(json?.LoteDFe) ? json.LoteDFe : [];
+    // A page that does not match the documented shape is not an answer: never let the cursor skip it.
+    const wellShaped = (doc: unknown): doc is Record<string, unknown> =>
+      isRecord(doc) &&
+      Number.isSafeInteger(Number(doc.NSU)) &&
+      Number(doc.NSU) > 0 &&
+      typeof doc.TipoDocumento === "string" &&
+      doc.TipoDocumento !== "";
+    if (!batch.every(wellShaped)) throw new AdnError("unavailable", [], response.status);
     let xmls: string[];
     try {
-      if (!nsus.every((nsu) => Number.isSafeInteger(nsu) && nsu > 0)) throw new Error("invalid NSU");
       xmls = gunzipBase64(...batch.map((doc) => String(doc.ArquivoXml ?? "")));
     } catch {
       throw new AdnError("unavailable", [], response.status);
     }
     return batch.map((doc, index) => ({
-      nsu: nsus[index],
+      nsu: Number(doc.NSU),
       accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
-      type: String(doc.TipoDocumento ?? ""),
+      type: doc.TipoDocumento as string,
       xml: xmls[index],
     }));
   }

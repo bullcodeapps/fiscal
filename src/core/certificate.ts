@@ -75,9 +75,9 @@ const MAX_PASSWORD_LENGTH = 256;
 const MAX_TOTAL_KDF_ITERATIONS = 300_000n;
 
 /**
- * Sum of every iteration count in the file. PKCS#12 stores each salt as an
- * OCTET STRING followed by its count (MacData, PBE and PBKDF2 params), outside
- * the encrypted parts.
+ * Sum of the iteration counts readable before decryption (MacData, PBE and
+ * PBKDF2 params, each an OCTET STRING salt followed by its count). Counts
+ * inside an encrypted layer stay invisible: see SECURITY.md.
  */
 function totalIterations(node: forge.asn1.Asn1): bigint {
   if (Array.isArray(node.value)) {

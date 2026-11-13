@@ -127,6 +127,8 @@ function assertKeyFields(input) {
 }
 function assertExportRules(input) {
   const { toma, serv, valores } = input;
+  const identities = toma ? ["CNPJ", "CPF", "NIF", "cNaoNIF"].filter((key) => key in toma) : [];
+  if (toma && identities.length !== 1) throw new Error("toma: exactly one of CNPJ, CPF, NIF or cNaoNIF");
   const foreignId = toma !== void 0 && ("NIF" in toma || "cNaoNIF" in toma);
   const foreignAddress = toma?.end !== void 0 && "cPais" in toma.end;
   if (foreignId && !foreignAddress) {
@@ -254,6 +256,64 @@ function request(agent, url, method, timeoutMs, body) {
   });
 }
 
+// src/nfse/summary.ts
+import { XMLParser } from "fast-xml-parser";
+var parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  removeNSPrefix: true,
+  parseTagValue: false
+});
+function readNfseSummary(nfseXml) {
+  assertWellFormed(nfseXml);
+  const inf = parser.parse(nfseXml)?.NFSe?.infNFSe;
+  if (!inf) throw new Error("Not an NFS-e: infNFSe is missing");
+  const infDps = inf?.DPS?.infDPS;
+  const toma = infDps?.toma;
+  const vServ = infDps?.valores?.vServPrest?.vServ;
+  const description = infDps?.serv?.cServ?.xDescServ;
+  const text2 = (value) => value === void 0 || value === null ? null : String(value);
+  return {
+    accessKey: String(inf?.["@_Id"] ?? "").replace(/^NFS/, ""),
+    number: inf?.nNFSe === void 0 ? null : String(inf.nNFSe),
+    takerDocument: toma?.CNPJ ?? toma?.CPF ?? null,
+    serviceValueCents: Math.round(Number(vServ ?? 0) * 100),
+    competenceDate: infDps?.dCompet ?? null,
+    description: description === void 0 ? null : String(description),
+    providerDocument: text2(inf?.emit?.CNPJ ?? inf?.emit?.CPF),
+    takerName: text2(toma?.xNome),
+    takerNif: text2(toma?.NIF),
+    issuedAt: text2(infDps?.dhEmi),
+    issqnCents: Math.round(Number(inf?.valores?.vISSQN ?? 0) * 100),
+    issqnInSimples: String(infDps?.prest?.regTrib?.regApTribSN ?? "") === "1"
+  };
+}
+function readNfseEventSummary(eventXml) {
+  assertWellFormed(eventXml);
+  const infPedReg = findKey(parser.parse(eventXml), "infPedReg");
+  const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
+  return {
+    accessKey: String(infPedReg?.chNFSe ?? ""),
+    code: codeKey ? codeKey.slice(1) : null
+  };
+}
+function findKey(node, key) {
+  if (!node || typeof node !== "object") return void 0;
+  const record = node;
+  if (key in record) return record[key];
+  for (const child2 of Object.values(record)) {
+    const found = findKey(child2, key);
+    if (found !== void 0) return found;
+  }
+  return void 0;
+}
+var DPS_DIGEST = /<(?:\w+:)?Reference URI="#(DPS[0-9A-Z]{42})"[\s\S]*?<(?:\w+:)?DigestValue>([^<]+)</;
+function isNfseOfDps(nfseXml, signedDpsXml) {
+  const note = DPS_DIGEST.exec(nfseXml);
+  const dps = DPS_DIGEST.exec(signedDpsXml);
+  return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
+}
+
 // src/nfse/sefin-client.ts
 var BASE_URLS = {
   production: "https://sefin.nfse.gov.br/SefinNacional",
@@ -273,9 +333,10 @@ var SefinError = class extends Error {
   httpStatus;
   name = "SefinError";
 };
+var isRecord = (value) => typeof value === "object" && value !== null;
 function toMessages(raw) {
-  const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
-  return list.map((m) => {
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.filter(isRecord).map((m) => {
     const complement = m.Complemento ?? m.complemento;
     return {
       code: String(m.Codigo ?? m.codigo ?? ""),
@@ -294,10 +355,20 @@ function parseJson(body) {
 }
 function decode(gzipB64, httpStatus) {
   try {
-    return gunzipBase64(gzipB64)[0];
+    const xml = gunzipBase64(gzipB64)[0];
+    assertWellFormed(xml);
+    return xml;
   } catch {
     throw new SefinError("unavailable", [], httpStatus);
   }
+}
+function decodeEvent(gzipB64, httpStatus, expected) {
+  const xml = decode(gzipB64, httpStatus);
+  const event = readNfseEventSummary(xml);
+  if (event.accessKey !== expected.accessKey || event.code !== expected.type) {
+    throw new SefinError("unavailable", [], httpStatus);
+  }
+  return xml;
 }
 function interpretEmission(response) {
   const json = parseJson(response.body);
@@ -321,10 +392,10 @@ function interpretEmission(response) {
     response.status
   );
 }
-function interpretEvent(response) {
+function interpretEvent(response, expected) {
   const json = parseJson(response.body);
   if (response.status >= 200 && response.status < 300 && typeof json?.eventoXmlGZipB64 === "string") {
-    return decode(json.eventoXmlGZipB64, response.status);
+    return decodeEvent(json.eventoXmlGZipB64, response.status, expected);
   }
   const messages = toMessages(json?.erro ?? json?.erros);
   throw new SefinError(
@@ -333,11 +404,11 @@ function interpretEvent(response) {
     response.status
   );
 }
-function interpretEventLookup(response) {
-  if (response.status === 404) return null;
+function interpretEventLookup(response, expected) {
   const json = parseJson(response.body);
+  if (response.status === 404 && json) return null;
   if (response.status === 200 && typeof json?.eventoXmlGZipB64 === "string") {
-    return decode(json.eventoXmlGZipB64, response.status);
+    return decodeEvent(json.eventoXmlGZipB64, response.status, expected);
   }
   const messages = toMessages(json?.erro ?? json?.erros);
   throw new SefinError(
@@ -370,11 +441,13 @@ var SefinClient = class {
    * (see docs/integration.md, cancellation).
    */
   async registerEvent(accessKey, signedEventXml) {
+    const type = readNfseEventSummary(signedEventXml).code;
+    if (!type) throw new Error("registerEvent: signedEventXml is not a pedRegEvento (use buildCancellation)");
     const body = JSON.stringify({
       pedidoRegistroEventoXmlGZipB64: gzipSync(signedEventXml).toString("base64")
     });
     const response = await this.request("POST", `/nfse/${encodeURIComponent(accessKey)}/eventos`, body);
-    return interpretEvent(response);
+    return interpretEvent(response, { accessKey, type });
   }
   /**
    * The registered event of this type and sequence (e.g. "101101", 1 for a cancellation), or null when
@@ -383,7 +456,7 @@ var SefinClient = class {
    */
   async findEvent(accessKey, eventType, sequence = 1) {
     const path = `/nfse/${encodeURIComponent(accessKey)}/eventos/${encodeURIComponent(eventType)}/${sequence}`;
-    return interpretEventLookup(await this.request("GET", path));
+    return interpretEventLookup(await this.request("GET", path), { accessKey, type: eventType });
   }
   /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */
   async findAccessKeyByDpsId(dpsId2) {
@@ -429,7 +502,7 @@ var NFSE_LOGO_PNG = Buffer.from(
 );
 
 // src/nfse/danfse/model.ts
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser as XMLParser2 } from "fast-xml-parser";
 var EMPTY = "-";
 var TP_EMIT = { "1": "Prestador", "2": "Tomador", "3": "Intermedi\xE1rio" };
 var C_STAT = {
@@ -505,6 +578,10 @@ function document(node) {
   if (cpf) return cpf.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
   return or(text(node, "NIF"));
 }
+function place(name, uf, country) {
+  if (country) return `${or(name)} / ${EMPTY} / ${country}`;
+  return name ? `${name} / ${or(uf)} / BR` : EMPTY;
+}
 function dateTime(value) {
   const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2}:\d{2})/);
   return match ? `${match[3]}/${match[2]}/${match[1]} ${match[4]}` : EMPTY;
@@ -557,7 +634,7 @@ function partyFields(party, withMunicipalRegistration) {
     ]
   ];
 }
-var parser = new XMLParser({
+var parser2 = new XMLParser2({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
   removeNSPrefix: true,
@@ -566,7 +643,7 @@ var parser = new XMLParser({
 });
 function buildDanfseModel(nfseXml) {
   assertWellFormed(nfseXml);
-  const root = parser.parse(nfseXml);
+  const root = parser2.parse(nfseXml);
   const inf = child(root.NFSe, "infNFSe");
   if (!inf) throw new Error("Not an NFS-e: infNFSe is missing");
   const infDps = child(child(inf, "DPS"), "infDPS");
@@ -650,7 +727,7 @@ function buildDanfseModel(nfseXml) {
         { label: "C\xF3digo da NBS", value: cNbs ? cNbs.replace(/^(\d)(\d{4})(\d{2})(\d{2})$/, "$1.$2.$3.$4") : EMPTY, col: 2 },
         {
           label: "Local da Presta\xE7\xE3o / Sigla UF / Pa\xEDs",
-          value: text(inf, "xLocPrestacao") ? `${text(inf, "xLocPrestacao")} / ${or(prestacaoUf)} / BR` : EMPTY,
+          value: place(text(inf, "xLocPrestacao"), prestacaoUf, text(child(serv, "locPrest"), "cPaisPrestacao")),
           col: 3
         }
       ]
@@ -672,7 +749,7 @@ function buildDanfseModel(nfseXml) {
         { label: "Tipo de Tributa\xE7\xE3o do ISSQN", value: describe(TRIB_ISSQN, tribIssqn), col: 1 },
         {
           label: "Munic\xEDpio / Sigla UF / Pa\xEDs de Incid\xEAncia do ISSQN",
-          value: text(inf, "xLocIncid") ? `${text(inf, "xLocIncid")} / ${or(incidUf)} / BR` : EMPTY,
+          value: place(text(inf, "xLocIncid"), incidUf, text(tribMun, "cPaisResult")),
           col: 2,
           span: 2
         }
@@ -973,64 +1050,6 @@ function buildCancellation(input, certificate) {
   return `<?xml version="1.0" encoding="UTF-8"?>${signEnveloped(xml, "infPedReg", certificate)}`;
 }
 
-// src/nfse/summary.ts
-import { XMLParser as XMLParser2 } from "fast-xml-parser";
-var parser2 = new XMLParser2({
-  ignoreAttributes: false,
-  attributeNamePrefix: "@_",
-  removeNSPrefix: true,
-  parseTagValue: false
-});
-function readNfseSummary(nfseXml) {
-  assertWellFormed(nfseXml);
-  const inf = parser2.parse(nfseXml)?.NFSe?.infNFSe;
-  if (!inf) throw new Error("Not an NFS-e: infNFSe is missing");
-  const infDps = inf?.DPS?.infDPS;
-  const toma = infDps?.toma;
-  const vServ = infDps?.valores?.vServPrest?.vServ;
-  const description = infDps?.serv?.cServ?.xDescServ;
-  const text2 = (value) => value === void 0 || value === null ? null : String(value);
-  return {
-    accessKey: String(inf?.["@_Id"] ?? "").replace(/^NFS/, ""),
-    number: inf?.nNFSe === void 0 ? null : String(inf.nNFSe),
-    takerDocument: toma?.CNPJ ?? toma?.CPF ?? null,
-    serviceValueCents: Math.round(Number(vServ ?? 0) * 100),
-    competenceDate: infDps?.dCompet ?? null,
-    description: description === void 0 ? null : String(description),
-    providerDocument: text2(inf?.emit?.CNPJ ?? inf?.emit?.CPF),
-    takerName: text2(toma?.xNome),
-    takerNif: text2(toma?.NIF),
-    issuedAt: text2(infDps?.dhEmi),
-    issqnCents: Math.round(Number(inf?.valores?.vISSQN ?? 0) * 100),
-    issqnInSimples: String(infDps?.prest?.regTrib?.regApTribSN ?? "") === "1"
-  };
-}
-function readNfseEventSummary(eventXml) {
-  assertWellFormed(eventXml);
-  const infPedReg = findKey(parser2.parse(eventXml), "infPedReg");
-  const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
-  return {
-    accessKey: String(infPedReg?.chNFSe ?? ""),
-    code: codeKey ? codeKey.slice(1) : null
-  };
-}
-function findKey(node, key) {
-  if (!node || typeof node !== "object") return void 0;
-  const record = node;
-  if (key in record) return record[key];
-  for (const child2 of Object.values(record)) {
-    const found = findKey(child2, key);
-    if (found !== void 0) return found;
-  }
-  return void 0;
-}
-var DPS_DIGEST = /<(?:\w+:)?Reference URI="#(DPS[0-9A-Z]{42})"[\s\S]*?<(?:\w+:)?DigestValue>([^<]+)</;
-function isNfseOfDps(nfseXml, signedDpsXml) {
-  const note = DPS_DIGEST.exec(nfseXml);
-  const dps = DPS_DIGEST.exec(signedDpsXml);
-  return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
-}
-
 // src/nfse/adn-client.ts
 var BASE_URLS2 = {
   production: "https://adn.nfse.gov.br/contribuintes",
@@ -1058,9 +1077,10 @@ function parseJson2(body) {
     return null;
   }
 }
+var isRecord2 = (value) => typeof value === "object" && value !== null;
 function toMessages2(raw) {
-  const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
-  return list.map((m) => ({
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.filter(isRecord2).map((m) => ({
     code: String(m.Codigo ?? m.codigo ?? ""),
     description: String(m.Descricao ?? m.descricao ?? "")
   }));
@@ -1072,18 +1092,18 @@ function interpretDistribution(response) {
   if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     const batch = Array.isArray(json?.LoteDFe) ? json.LoteDFe : [];
-    const nsus = batch.map((doc) => Number(doc.NSU));
+    const wellShaped = (doc) => isRecord2(doc) && Number.isSafeInteger(Number(doc.NSU)) && Number(doc.NSU) > 0 && typeof doc.TipoDocumento === "string" && doc.TipoDocumento !== "";
+    if (!batch.every(wellShaped)) throw new AdnError("unavailable", [], response.status);
     let xmls;
     try {
-      if (!nsus.every((nsu) => Number.isSafeInteger(nsu) && nsu > 0)) throw new Error("invalid NSU");
       xmls = gunzipBase64(...batch.map((doc) => String(doc.ArquivoXml ?? "")));
     } catch {
       throw new AdnError("unavailable", [], response.status);
     }
     return batch.map((doc, index) => ({
-      nsu: nsus[index],
+      nsu: Number(doc.NSU),
       accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
-      type: String(doc.TipoDocumento ?? ""),
+      type: doc.TipoDocumento,
       xml: xmls[index]
     }));
   }

@@ -174,6 +174,11 @@ describe("export of services", () => {
     expect(dps.id).toBe("DPS42082032" + "12ABC34501DE35" + "00900" + "000001793042430");
   });
 
+  it("rejects a taker with more than one identity, which JSON input can carry past the types", () => {
+    const toma = { ...accepted.toma, NIF: "98-7654321" } as unknown as Taker;
+    expect(() => buildDps({ ...accepted, toma })).toThrow("toma: exactly one of CNPJ, CPF, NIF or cNaoNIF");
+  });
+
   // These fields form the DPS Id attribute: a bad value breaks the XML or comes back as E0004.
   it.each([
     [{ cLocEmi: "420820" }, "cLocEmi: must be the 7-digit IBGE code"],

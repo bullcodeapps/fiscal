@@ -316,6 +316,8 @@ function assertKeyFields(input: DpsInput): void {
 /** Sefin business rules the XSD does not express. */
 function assertExportRules(input: DpsInput): void {
   const { toma, serv, valores } = input;
+  const identities = toma ? ["CNPJ", "CPF", "NIF", "cNaoNIF"].filter((key) => key in toma) : [];
+  if (toma && identities.length !== 1) throw new Error("toma: exactly one of CNPJ, CPF, NIF or cNaoNIF");
   const foreignId = toma !== undefined && ("NIF" in toma || "cNaoNIF" in toma);
   const foreignAddress = toma?.end !== undefined && "cPais" in toma.end;
 

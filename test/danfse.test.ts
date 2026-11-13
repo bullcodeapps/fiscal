@@ -153,6 +153,23 @@ describe("buildDanfseModel", () => {
     expect(federal.rows).toHaveLength(rows);
   });
 
+  // NT 008: the place shows cPaisPrestacao, and the ISSQN incidence shows cPaisResult, instead of BR.
+  it("shows the country of a service performed abroad", () => {
+    const abroad = fixture("nfse-990401")
+      .replace("<xLocPrestacao>Itajaí</xLocPrestacao>", "")
+      .replace("<locPrest><cLocPrestacao>4208203</cLocPrestacao></locPrest>", "<locPrest><cPaisPrestacao>US</cPaisPrestacao></locPrest>");
+    expect(fieldValues(buildDanfseModel(abroad), "SERVIÇO PRESTADO")["Local da Prestação / Sigla UF / País"]).toBe("- / - / US");
+  });
+
+  it("shows the country of the result as the ISSQN incidence of an export", () => {
+    const exported = fixture("nfse-170303")
+      .replace("<xLocIncid>Itajaí</xLocIncid>", "")
+      .replace("<tribISSQN>1</tribISSQN>", "<tribISSQN>3</tribISSQN><cPaisResult>US</cPaisResult>");
+    expect(
+      fieldValues(buildDanfseModel(exported), "TRIBUTAÇÃO MUNICIPAL (ISSQN)")["Município / Sigla UF / País de Incidência do ISSQN"],
+    ).toBe("- / - / US");
+  });
+
   it("reads finNFSe and the IBS/CBS situation from the production layout", () => {
     // Produção nests finNFSe in IBSCBS and CST/cClassTrib in gIBSCBS (nfse-esquemas_xsd-v1-01-20260209).
     const production = fixture("nfse-990401")

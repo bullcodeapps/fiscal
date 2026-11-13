@@ -79,6 +79,9 @@ describe("interpretDistribution", () => {
     { scenario: "a page above 10 MB once decompressed", docs: [1, 2, 3].map((nsu) => ({ NSU: nsu, TipoDocumento: "NFSE", ArquivoXml: gz(4 * 1024 * 1024) })) },
     { scenario: "an NSU that is not a positive integer", docs: [{ NSU: "abc", TipoDocumento: "NFSE", ArquivoXml: gz(10) }] },
     { scenario: "base64 with characters outside the alphabet", docs: [{ NSU: 1, TipoDocumento: "NFSE", ArquivoXml: `${gz(10)}!!` }] },
+    { scenario: "a page entry that is not an object", docs: [null] },
+    // Without its type an NFS-e would be handled as an event and skipped for good.
+    { scenario: "a document without its type", docs: [{ NSU: 1, ArquivoXml: gz(10) }] },
   ])("treats $scenario as unavailable", ({ docs }) => {
     let error: unknown;
     try {

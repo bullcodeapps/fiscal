@@ -4,6 +4,21 @@ import { SefinError } from "../src/nfse";
 import { interpretEmission, interpretEvent, interpretEventLookup } from "../src/nfse/sefin-client";
 
 // Response bodies follow what Sefin produção restrita returned on 2026-10-26.
+const KEY = "42082032211222333000181000000000000126104513068510";
+const eventXmlFor = (accessKey: string, type = "101101") =>
+  `<evento><infEvento Id="EVT${accessKey}${type}001"><nSeqEvento>1</nSeqEvento><pedRegEvento><infPedReg Id="PRE${accessKey}${type}">` +
+  `<chNFSe>${accessKey}</chNFSe><e${type}><cMotivo>1</cMotivo></e${type}></infPedReg></pedRegEvento></infEvento></evento>`;
+const gz = (xml: string) => gzipSync(xml).toString("base64");
+const expectUnavailable = (call: () => unknown) => {
+  let error: unknown;
+  try {
+    call();
+  } catch (thrown) {
+    error = thrown;
+  }
+  expect(error).toBeInstanceOf(SefinError);
+  expect((error as SefinError).kind).toBe("unavailable");
+};
 describe("interpretEmission", () => {
   it("decodes the authorized NFS-e", () => {
     const nfseXml = "<NFSe><infNFSe><nNFSe>1</nNFSe></infNFSe></NFSe>";
@@ -89,19 +104,28 @@ describe("interpretEmission", () => {
 
 describe("interpretEvent", () => {
   it("decodes the registered event", () => {
-    const eventXml = "<evento><infEvento><nSeqEvento>1</nSeqEvento></infEvento></evento>";
-    expect(
-      interpretEvent({ status: 201, body: JSON.stringify({ eventoXmlGZipB64: gzipSync(eventXml).toString("base64") }) }),
-    ).toBe(eventXml);
+    const eventXml = eventXmlFor(KEY);
+    expect(interpretEvent({ status: 201, body: JSON.stringify({ eventoXmlGZipB64: gz(eventXml) }) }, { accessKey: KEY, type: "101101" })).toBe(
+      eventXml,
+    );
+  });
+
+  // A success that is not the requested event must not be stored as proof of a cancellation.
+  it.each([
+    { scenario: "XML that is not well formed", xml: "<evento><infEvento>" },
+    { scenario: "an event of another note", xml: eventXmlFor("4208203221122233300018100000000000012610451306851X".replace("X", "9")) },
+    { scenario: "another event type", xml: eventXmlFor(KEY, "105102") },
+  ])("treats $scenario as unavailable", ({ xml }) => {
+    expectUnavailable(() => interpretEvent({ status: 201, body: JSON.stringify({ eventoXmlGZipB64: gz(xml) }) }, { accessKey: KEY, type: "101101" }));
   });
 
   it("reads the lowercase `erro` object the event endpoint answers with", () => {
     let error: unknown;
     try {
-      interpretEvent({
-        status: 400,
-        body: JSON.stringify({ erro: { codigo: "E0840", descricao: "Cancelamento já vinculado à NFS-e." } }),
-      });
+      interpretEvent(
+        { status: 400, body: JSON.stringify({ erro: { codigo: "E0840", descricao: "Cancelamento já vinculado à NFS-e." } }) },
+        { accessKey: KEY, type: "101101" },
+      );
     } catch (thrown) {
       error = thrown;
     }
@@ -116,28 +140,40 @@ describe("interpretEvent", () => {
 // GET /nfse/{chave}/eventos/{tipo}/{seq}: 200 carries the same body as the POST (EventosPostResponseSucesso),
 // 404 means no such event (OpenAPI captured from produção restrita).
 describe("interpretEventLookup", () => {
-  it("decodes a registered event", () => {
-    const eventXml = "<evento><infEvento/></evento>";
-    expect(
-      interpretEventLookup({ status: 200, body: JSON.stringify({ tipoAmbiente: 2, eventoXmlGZipB64: gzipSync(eventXml).toString("base64") }) }),
-    ).toBe(eventXml);
+  const expected = { accessKey: KEY, type: "101101" };
+
+  it("decodes the requested event", () => {
+    const eventXml = eventXmlFor(KEY);
+    expect(interpretEventLookup({ status: 200, body: JSON.stringify({ tipoAmbiente: 2, eventoXmlGZipB64: gz(eventXml) }) }, expected)).toBe(
+      eventXml,
+    );
   });
 
-  it("returns null when the note has no such event", () => {
-    expect(interpretEventLookup({ status: 404, body: JSON.stringify({ erro: { codigo: "E404", descricao: "Nenhum evento" } }) })).toBeNull();
+  it("returns null when Sefin answers that the note has no such event", () => {
+    expect(
+      interpretEventLookup({ status: 404, body: JSON.stringify({ erro: { codigo: "E404", descricao: "Nenhum evento" } }) }, expected),
+    ).toBeNull();
   });
 
   // An unknown answer must never read as "no event": the caller would resend or revert a cancellation.
   it.each([
+    { scenario: "a 404 page from a gateway", response: { status: 404, body: "<html>Not Found</html>" } },
     { scenario: "a 200 without the event", response: { status: 200, body: "{}" } },
+    { scenario: "a 200 with another note's event", response: { status: 200, body: JSON.stringify({ eventoXmlGZipB64: gz(eventXmlFor(KEY, "105102")) }) } },
     { scenario: "a server error", response: { status: 502, body: "" } },
   ])("treats $scenario as unavailable", ({ response }) => {
-    let error: unknown;
-    try {
-      interpretEventLookup(response);
-    } catch (thrown) {
-      error = thrown;
-    }
-    expect((error as SefinError).kind).toBe("unavailable");
+    expectUnavailable(() => interpretEventLookup(response, expected));
+  });
+});
+
+describe("malformed bodies", () => {
+  it("treats an error list with non-object members as unavailable", () => {
+    expectUnavailable(() => interpretEmission({ status: 500, body: JSON.stringify({ erros: [null, 7] }) }));
+  });
+
+  it("treats an authorized note that is not well-formed XML as unavailable", () => {
+    expectUnavailable(() =>
+      interpretEmission({ status: 201, body: JSON.stringify({ chaveAcesso: KEY, nfseXmlGZipB64: gz("<NFSe><infNFSe>") }) }),
+    );
   });
 });
