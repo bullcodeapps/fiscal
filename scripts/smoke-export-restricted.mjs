@@ -51,7 +51,7 @@ const dps = buildDps({
       mdic: 0,
     },
   },
-  valores: { vServ: 10000, tribISSQN: 3, tpRetISSQN: 1, totTrib: { pTotTribSN: 6 } },
+  valores: { vServ: 10000, tribISSQN: 3, cPaisResult: "US", tpRetISSQN: 1, totTrib: { pTotTribSN: 6 } },
   IBSCBS: { indFinal: 0, cIndOp: "100301", indDest: 0, CST: "000", cClassTrib: "000001" },
 });
 

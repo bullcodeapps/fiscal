@@ -1,0 +1,13 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "@bullcode/fiscal",
+  "description": "Brazilian fiscal documents for Node.js: NFS-e Nacional emission (DPS, XMLDSig, Sefin mTLS client, cancellation, ADN, DANFSe)",
+  "folders": ["docs", "README.md"],
+  "excludeFolders": ["test", "dist", "scripts"],
+  "rules": [
+    "Persist the signed DPS and set sentAt before every SefinClient.emit call.",
+    "After a SefinError with kind 'unavailable', call findAccessKeyByDpsId before resending, and never allocate a new nDPS for that note.",
+    "prest.CNPJ must equal certificate.cnpj.",
+    "Exports (tribISSQN 3) need serv.comExt, valores.cPaisResult and a taker identified by NIF or cNaoNIF with a foreign address."
+  ]
+}
