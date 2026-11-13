@@ -14,10 +14,14 @@ Branch on the error class and its `code` / `kind`, never on message text.
 
 ## Error (`buildDps`)
 
-Thrown before any network call. The prefix names the DPS group, so an app can route it to the right form.
+Thrown before any network call. The prefix names the DPS field or group, so an app can route it to the right form.
 
 | Message | Fix |
 | --- | --- |
+| `cLocEmi: must be the 7-digit IBGE code` | Use `findMunicipalityCode(city, uf)` |
+| `prest: CNPJ must be 14 digits` | Digits only, no mask. Use `certificate.cnpj` |
+| `serie: must be 1 to 5 digits` | For example `"00001"` |
+| `nDPS: must be 1 to 15 digits, not starting with 0` | `String(n)` of a positive integer from your counter |
 | `serv: exactly one of cLocPrestacao or cPaisPrestacao` | Set exactly one of `serv.cLocPrestacao` / `serv.cPaisPrestacao` |
 | `toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)` | Give the foreign taker a `ForeignAddress` (`cPais`, `cEndPost`, `xCidade`, `xEstProvReg`, ...) |
 | `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF` | Use `NIF` or `cNaoNIF` instead of `CNPJ` / `CPF` |
@@ -29,6 +33,8 @@ Thrown before any network call. The prefix names the DPS group, so an app can ro
 
 | Message | Fix |
 | --- | --- |
+| `accessKey must be the 50-digit chave de acesso` | Pass `IssuedNfse.accessKey` as stored |
+| `authorCnpj must be 14 digits` | Use `certificate.cnpj` |
 | `A justificativa do cancelamento deve ter entre 15 e 255 caracteres.` | `description` must have 15 to 255 characters after trimming |
 
 ## SefinError (`SefinClient`)

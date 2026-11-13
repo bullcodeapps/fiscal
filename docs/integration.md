@@ -15,6 +15,9 @@ The app owns:
 - one row per note, with its state, as described in step 4
 - the retry and reconciliation loop
 
+Before writing code, confirm that the issuing municipality accepts notes from the national emitters
+(see "Municipality adhesion" in [codes.md](./codes.md)). Otherwise Sefin rejects every DPS with E0037 to E0039.
+
 ## 2. Load the certificate
 
 ```ts
@@ -100,7 +103,7 @@ await save({ nfseXml: issued.nfseXml, status: "authorized" });
 | Any other exception after `emit` was called | Same as `unavailable` | Same as `unavailable` |
 
 `buildDps`, `signDps` and `buildCancellation` throw plain `Error` / `RangeError` before any network call.
-`buildDps` messages start with the DPS group (`toma:`, `serv:`, `valores:`) and quote the Sefin code they prevent.
+`buildDps` messages start with the DPS field or group (`cLocEmi:`, `prest:`, `serie:`, `nDPS:`, `toma:`, `serv:`, `valores:`) and quote the Sefin code they prevent, when there is one.
 See [errors.md](./errors.md) for the full list.
 
 ## 7. Reconcile after `unavailable`
@@ -287,8 +290,10 @@ const eventXml = buildCancellation(
 const registered = await client.registerEvent(row.accessKey, eventXml);
 ```
 
-`registerEvent` throws `SefinError`. `rejected` means Sefin refused the cancellation (for example the note
-is already cancelled, or the deadline passed). `unavailable` is safe to retry: Sefin rejects a duplicate event.
+`registerEvent` throws `SefinError`. `rejected` means Sefin refused the cancellation: the note is already
+cancelled, or a municipal limit applies (deadline, default 730 days; value; taxes already paid). See the event
+codes in [codes.md](./codes.md). After the deadline, only the taxpayer can ask for análise fiscal in the
+national portal. `unavailable` is safe to retry: Sefin rejects a duplicate event.
 Store `registered` (the event XML Sefin signed back) and set the row to `cancelled`.
 
 ## 12. Import notes from the ADN

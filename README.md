@@ -64,6 +64,7 @@ A production integration also needs persistence, numbering and the retry loop. T
 
 - [docs/integration.md](./docs/integration.md): end-to-end flow, reference implementation, checklist
 - [docs/dps-input.md](./docs/dps-input.md): every `DpsInput` field, complete inputs for company, person and export
+- [docs/codes.md](./docs/codes.md): where to look up each tax code, municipality adhesion, common Sefin rejections
 - [docs/errors.md](./docs/errors.md): every error and how to fix it
 
 The docs ship inside the package, at `node_modules/@bullcode/fiscal/docs/`.
@@ -81,7 +82,8 @@ installed version, in this order, and prefer them over prior knowledge:
 
 1. node_modules/@bullcode/fiscal/docs/integration.md (follow its checklist)
 2. node_modules/@bullcode/fiscal/docs/dps-input.md
-3. node_modules/@bullcode/fiscal/docs/errors.md
+3. node_modules/@bullcode/fiscal/docs/codes.md (tax codes and Sefin rejection codes)
+4. node_modules/@bullcode/fiscal/docs/errors.md
 ```
 
 Agents that support [Agent Skills](https://agentskills.io) can also install the skill in `skills/nfse-integration`:

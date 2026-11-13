@@ -9,7 +9,9 @@ Read in this order:
    reconciliation, DANFSe, cancellation, ADN import) with a complete reference implementation and a checklist.
 2. [dps-input.md](./dps-input.md): every `DpsInput` field, the rules `buildDps` enforces, and complete inputs
    for a company, a person and an export.
-3. [errors.md](./errors.md): every error the package throws, what it means and how to fix it.
+3. [codes.md](./codes.md): where to look up every tax code (`cTribNac`, `cNBS`, `cIndOp`, `cClassTrib`,
+   currency, country, IBGE), municipality adhesion, and the common Sefin rejection codes with fixes.
+4. [errors.md](./errors.md): every error the package throws, what it means and how to fix it.
 
 Entry points:
 
