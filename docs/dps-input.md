@@ -39,7 +39,7 @@ Conventions:
 
 ## toma (Taker)
 
-Exactly one identity field:
+Exactly one identity field (`buildDps` throws `toma: exactly one of CNPJ, CPF, NIF or cNaoNIF` otherwise):
 
 | Identity | Taker |
 | --- | --- |

@@ -29,6 +29,12 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
 - `cNaoNIF` accepts 1 or 2, `comExt.mdPrestacao` 1 to 4, `comExt.movTempBens` only 1; `nDI` / `nRE` removed.
   **Breaking** only for values Sefin always rejected (E0226, E0333) or that need declaration numbers.
 - `IbsCbs.indDest` accepts only `0`. **Breaking** for inputs passing `1`, which produced an invalid note anyway.
+- Event answers are verified: `registerEvent` and `findEvent` return only well-formed event XML for the same
+  access key and event type, and `findEvent` returns null only for Sefin's JSON 404. Malformed NFS-e XML from
+  `emit` / `getNfseXml` is `unavailable`. `registerEvent` throws if given anything but a `pedRegEvento`.
+- `AdnClient`: a page entry that is not an object, or a document without `TipoDocumento`, is `unavailable`.
+- `buildDps` requires exactly one taker identity (`CNPJ`, `CPF`, `NIF` or `cNaoNIF`).
+- DANFSe shows `cPaisPrestacao` / `cPaisResult` instead of BR for services abroad and exports.
 - MIT license.
 - node-forge 1.4.3 and fast-xml-parser 5.12.0 (security advisories).
 - Pins pnpm 10 in `packageManager`.

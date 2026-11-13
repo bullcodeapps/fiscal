@@ -42,6 +42,8 @@ Use `certificate.cnpj` as `prest.CNPJ`. Sefin refuses a DPS whose provider is no
 
 Security: `loadCertificate` only extracts data. It does not validate the ICP-Brasil chain, so `certificate.cnpj`
 is not proof that the uploader owns the company. Never log the certificate, its password or `privateKeyPem`.
+It is synchronous, and its iteration cap only sees the unencrypted layers of the file: parse untrusted uploads in
+a worker thread with a time limit, and rate-limit them.
 
 ## 3. Choose the environment
 
@@ -428,46 +430,61 @@ NSUs are numbered per interested CNPJ, so the cursor and the runner lock are sco
 queried CNPJ): one `AdnStore` per pair.
 
 ```ts
+import type { Certificate } from "@bullcode/fiscal";
 import { AdnClient, type AdnDocument } from "@bullcode/fiscal/nfse";
 
+/** Events that cancel a note: cancellation, by substitution, granted in análise fiscal, de ofício. */
+const CANCELLING_EVENTS = ["101101", "105102", "105104", "305101"];
+
 interface AdnStore {
-  /** Exclusive lock for the importer (an advisory lock or a lease on the cursor); false when another run holds it. */
-  lock(): Promise<boolean>;
-  unlock(): Promise<void>;
+  /** Lease on this (environment, CNPJ) importer, or null when another run holds it. */
+  lock(): Promise<string | null>;
+  /** Releases only this lease. */
+  unlock(lease: string): Promise<void>;
   /** The highest NSU applied so far; 0 before the first import. */
   lastNsu(): Promise<number>;
-  /** In ONE transaction: store the document and move the cursor forward to `doc.nsu`. */
-  apply(doc: AdnDocument): Promise<void>;
+  /** In ONE transaction fenced by `lease`: store the document and move the cursor forward to `doc.nsu`. */
+  apply(lease: string, doc: AdnDocument): Promise<void>;
 }
 
-export async function importFromAdn(store: AdnStore, environment: "production" | "restricted", cnpj: string) {
-  if (!(await store.lock())) return;
+export async function importFromAdn(
+  store: AdnStore,
+  environment: "production" | "restricted",
+  cnpj: string,
+  /** The certificate of `cnpj` or of its root CNPJ. */
+  certificate: Certificate,
+) {
+  const lease = await store.lock();
+  if (!lease) return;
   try {
     const adn = new AdnClient({ environment, cnpj, certificate });
     for (;;) {
       const page = await adn.fetchDocuments(await store.lastNsu()); // up to 50, NSU order
       if (page.length === 0) return;
-      for (const doc of page) await store.apply(doc); // one at a time, in NSU order
+      for (const doc of page) await store.apply(lease, doc); // one at a time, in NSU order
     }
   } finally {
-    await store.unlock();
+    await store.unlock(lease);
   }
 }
 ```
 
-What `apply` does, inside its transaction:
+What `apply` does, inside its transaction, failing when `lease` is no longer held:
 
 - Store every document's raw `doc.xml` by `doc.nsu`, whatever its type.
 - `doc.type === "NFSE"`: also upsert the note by `doc.accessKey` with `readNfseSummary(doc.xml)`. A note the app
   already tracks gets an idempotent update; one issued elsewhere is new.
-- Any other type: read it with `readNfseEventSummary(doc.xml)`. When its `code` is `"101101"` (cancellation),
-  set the note with that `accessKey` to `cancelled`, from `authorized` or `cancelling`, and clear its lease in the
+- Any other type: read it with `readNfseEventSummary(doc.xml)`. When its `code` is in `CANCELLING_EVENTS`, set the
+  note with that `accessKey` to `cancelled`, from `authorized` or `cancelling`, and clear the note's lease in the
   same update, so a stale worker's later fenced write fails instead of overwriting `cancelled`. When `code` is
-  null (not an event), keep the raw XML only. Never fail the import on a type you do not know.
+  null (a well-formed document that is not an event), keep the raw XML only. Never fail the import on a type
+  you do not know.
 - The parsers throw `Error` on malformed XML. That rolls back the transaction and the cursor stays put: alert
   someone and retry later.
 - Move the cursor only forward: `UPDATE ... SET last_nsu = $nsu WHERE last_nsu < $nsu`. If the transaction
   fails, the cursor does not move and the next run replays the document.
+
+The library does not detect NSU gaps (documents the ADN skips). If the app needs that, track missing NSUs.
 
 `AdnError.kind`: `rate_limited` (HTTP 429, stop and resume later), `rejected` (the certificate may not query
 this CNPJ), `unavailable` (retry later, also for oversized or malformed answers). Run the import on a schedule,
@@ -491,7 +508,7 @@ to drive each branch of step 6.
 ## Checklist
 
 - [ ] Issuing municipality accepts the national emitters (codes.md)
-- [ ] Certificate and password stored encrypted and never logged, `validTo` monitored
+- [ ] Certificate and password stored encrypted and never logged, `validTo` monitored; untrusted uploads parsed in a worker thread with a time limit
 - [ ] `prest.CNPJ` equals `certificate.cnpj`
 - [ ] `nDPS` from an atomic counter per environment and `serie`, fixed for the row's life
 - [ ] Row created and signed DPS saved before the first `emit`
@@ -501,5 +518,5 @@ to drive each branch of step 6.
 - [ ] One attempt per row at a time, every write fenced by the attempt's lease
 - [ ] `nfseXml` stored as personal data; DANFSe rendered from it
 - [ ] Cancellation validated with `buildCancellation` at request time; signed event and `cancelSentAt` persisted before each send; `findEvent` before any resend or final rejection
-- [ ] ADN import: cursor and lock per (environment, CNPJ), one runner at a time, each document and a forward-only cursor in one transaction, events clear the row's lease; never the only confirmation of the app's own notes or cancellations
+- [ ] ADN import: cursor and lease per (environment, CNPJ), one runner at a time, each document and a forward-only cursor in one transaction fenced by that lease; any cancelling event (101101, 105102, 105104, 305101) sets `cancelled` and clears the note's lease; never the only confirmation of the app's own notes or cancellations
 - [ ] Environment stored per note and used for queries and cancellation
