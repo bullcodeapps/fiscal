@@ -117,8 +117,8 @@ export interface IbsCbs {
   indFinal: 0 | 1;
   /** Código indicador da operação (Anexo VII). */
   cIndOp: string;
-  /** 0: the taker is the recipient. 1: someone else is. */
-  indDest: 0 | 1;
+  /** 0: the taker is the recipient. A different recipient (1, with the `dest` group) is not supported yet. */
+  indDest: 0;
   /** Mandatory for cTribNac 99.04.01 (rental of movable goods). */
   bensMoveis?: MovableGood[];
   CST: string;
@@ -332,8 +332,8 @@ function assertExportRules(input: DpsInput): void {
   if (valores.tribISSQN === 3 && !valores.cPaisResult) {
     throw new Error("valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)");
   }
-  if (serv.comExt && toma && !foreignId) {
-    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF");
+  if (serv.comExt && !foreignId) {
+    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF)");
   }
 }
 

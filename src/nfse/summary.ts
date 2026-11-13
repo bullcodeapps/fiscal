@@ -4,7 +4,7 @@ export interface NfseSummary {
   accessKey: string;
   /** nNFSe, the number the municipality shows on the note. */
   number: string | null;
-  /** CNPJ or CPF digits of the taker; null when the note has none. */
+  /** CNPJ (may have letters) or CPF of the taker, unmasked; null when the note has none. */
   takerDocument: string | null;
   /** vServ in cents. */
   serviceValueCents: number;
@@ -12,7 +12,7 @@ export interface NfseSummary {
   competenceDate: string | null;
   /** xDescServ. */
   description: string | null;
-  /** CNPJ or CPF digits of the provider (emit). */
+  /** CNPJ (may have letters) or CPF of the provider (emit), unmasked. */
   providerDocument: string | null;
   /** xNome of the taker. */
   takerName: string | null;
@@ -83,4 +83,17 @@ function findKey(node: unknown, key: string): unknown {
     if (found !== undefined) return found;
   }
   return undefined;
+}
+
+const DPS_DIGEST = /<(?:\w+:)?Reference URI="#(DPS[0-9A-Z]{42})"[\s\S]*?<(?:\w+:)?DigestValue>([^<]+)</;
+
+/**
+ * True when `nfseXml` is the note Sefin issued for exactly this signed DPS: same DPS Id and same
+ * signed content. Use it after reconciliation (E0014, timeout) before accepting the note found by
+ * DPS Id, because another DPS that reused the number has the same Id but different content.
+ */
+export function isNfseOfDps(nfseXml: string, signedDpsXml: string): boolean {
+  const note = DPS_DIGEST.exec(nfseXml);
+  const dps = DPS_DIGEST.exec(signedDpsXml);
+  return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
 }

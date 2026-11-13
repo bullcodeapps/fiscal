@@ -16,12 +16,14 @@ export interface SefinMessage {
 }
 
 /**
- * - `rejected`: Sefin answered and refused the DPS. Nothing was issued;
- *   fix the input and send a new DPS (same Id is fine).
+ * - `rejected`: Sefin answered and refused the DPS. Nothing was issued, except
+ *   with code E0014 (this DPS already has a note: reconcile, do not resend);
+ *   fix the input and send the corrected DPS with the same `nDPS`.
  * - `unavailable`: no definitive answer (timeout, 5xx, network). The DPS
  *   MAY have been authorized: call `findAccessKeyByDpsId` before resending.
- *   With `httpStatus` 401 or 403, Sefin refused the TLS client certificate
- *   (expired, revoked, not an e-CNPJ) and did not process the DPS.
+ *
+ * Either kind with `httpStatus` 401 or 403: Sefin refused the TLS client
+ * certificate (expired, revoked, not an e-CNPJ) and did not process the DPS.
  */
 export class SefinError extends Error {
   public readonly name = "SefinError";
@@ -40,7 +42,7 @@ export class SefinError extends Error {
 }
 
 export interface IssuedNfse {
-  /** Chave de acesso, 50 digits. Persist it first: it identifies the note in every later call. */
+  /** Chave de acesso, 50 characters (letters only with an alphanumeric CNPJ). Persist it first. */
   accessKey: string;
   /** The authorized NFS-e XML signed by Sefin. Store it: the DANFSe is rendered from it. */
   nfseXml: string;
@@ -77,7 +79,7 @@ function parseJson(body: string): Record<string, unknown> | null {
 /** A payload that cannot be decoded is not a definitive answer. */
 function decode(gzipB64: string, httpStatus: number): string {
   try {
-    return gunzipBase64(gzipB64);
+    return gunzipBase64(gzipB64)[0];
   } catch {
     throw new SefinError("unavailable", [], httpStatus);
   }
@@ -159,8 +161,9 @@ export class SefinClient {
 
   /**
    * Registers a signed event (e.g. `buildCancellation`). Returns the event
-   * XML Sefin signed back. Resending an event that already went through is
-   * rejected by Sefin, so an `unavailable` error is safe to retry.
+   * XML Sefin signed back. After an `unavailable` error the event may have gone
+   * through: a retry is safe, but its rejection does not prove the event failed
+   * (see docs/integration.md, cancellation).
    */
   async registerEvent(accessKey: string, signedEventXml: string): Promise<string> {
     const body = JSON.stringify({

@@ -25,8 +25,8 @@ interface Certificate {
  *
  * Extraction only: the ICP-Brasil chain is not validated, so `cnpj` is not proof that the uploader owns it.
  *
- * @throws {CertificateError} `unreadable` (wrong password, bad file, over 64 KB or 300,000 total KDF
- * iterations), `missing_key`, `missing_cnpj`.
+ * @throws {CertificateError} `unreadable` (wrong password, bad file, file over 64 KB, password over 256
+ * characters, or over 300,000 total KDF iterations), `missing_key`, `missing_cnpj`.
  * @example
  * const certificate = loadCertificate(readFileSync("cert.pfx"), password);
  * certificate.cnpj; // "11222333000181"

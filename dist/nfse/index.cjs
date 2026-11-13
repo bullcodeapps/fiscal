@@ -38,6 +38,7 @@ __export(nfse_exports, {
   buildDanfseModel: () => buildDanfseModel,
   buildDps: () => buildDps,
   dpsId: () => dpsId,
+  isNfseOfDps: () => isNfseOfDps,
   readNfseEventSummary: () => readNfseEventSummary,
   readNfseSummary: () => readNfseSummary,
   renderDanfse: () => renderDanfse,
@@ -180,8 +181,8 @@ function assertExportRules(input) {
   if (valores.tribISSQN === 3 && !valores.cPaisResult) {
     throw new Error("valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)");
   }
-  if (serv.comExt && toma && !foreignId) {
-    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF");
+  if (serv.comExt && !foreignId) {
+    throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF)");
   }
 }
 function buildDps(input) {
@@ -278,8 +279,16 @@ var import_node_zlib2 = require("zlib");
 var import_node_https = __toESM(require("https"), 1);
 var import_node_zlib = require("zlib");
 var MAX_BYTES = 10 * 1024 * 1024;
-function gunzipBase64(value) {
-  return (0, import_node_zlib.gunzipSync)(Buffer.from(value, "base64"), { maxOutputLength: MAX_BYTES }).toString("utf8");
+var BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+function gunzipBase64(...values) {
+  let budget = MAX_BYTES;
+  return values.map((value) => {
+    if (!BASE64.test(value)) throw new Error("malformed base64");
+    const xml = (0, import_node_zlib.gunzipSync)(Buffer.from(value, "base64"), { maxOutputLength: Math.max(budget, 1) });
+    budget -= xml.length;
+    if (budget < 0) throw new Error("decompressed output above size cap");
+    return xml.toString("utf8");
+  });
 }
 function mtlsAgent(certificate) {
   return new import_node_https.default.Agent({ key: certificate.privateKeyPem, cert: certificate.certificatePem });
@@ -356,7 +365,7 @@ function parseJson(body) {
 }
 function decode(gzipB64, httpStatus) {
   try {
-    return gunzipBase64(gzipB64);
+    return gunzipBase64(gzipB64)[0];
   } catch {
     throw new SefinError("unavailable", [], httpStatus);
   }
@@ -414,8 +423,9 @@ var SefinClient = class {
   }
   /**
    * Registers a signed event (e.g. `buildCancellation`). Returns the event
-   * XML Sefin signed back. Resending an event that already went through is
-   * rejected by Sefin, so an `unavailable` error is safe to retry.
+   * XML Sefin signed back. After an `unavailable` error the event may have gone
+   * through: a retry is safe, but its rejection does not prove the event failed
+   * (see docs/integration.md, cancellation).
    */
   async registerEvent(accessKey, signedEventXml) {
     const body = JSON.stringify({
@@ -1073,6 +1083,12 @@ function findKey(node, key) {
   }
   return void 0;
 }
+var DPS_DIGEST = /<(?:\w+:)?Reference URI="#(DPS[0-9A-Z]{42})"[\s\S]*?<(?:\w+:)?DigestValue>([^<]+)</;
+function isNfseOfDps(nfseXml, signedDpsXml) {
+  const note = DPS_DIGEST.exec(nfseXml);
+  const dps = DPS_DIGEST.exec(signedDpsXml);
+  return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
+}
 
 // src/nfse/adn-client.ts
 var BASE_URLS2 = {
@@ -1115,16 +1131,20 @@ function interpretDistribution(response) {
   if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     const batch = Array.isArray(json?.LoteDFe) ? json.LoteDFe : [];
+    const nsus = batch.map((doc) => Number(doc.NSU));
+    let xmls;
     try {
-      return batch.map((doc) => ({
-        nsu: Number(doc.NSU),
-        accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
-        type: String(doc.TipoDocumento ?? ""),
-        xml: gunzipBase64(String(doc.ArquivoXml ?? ""))
-      }));
+      if (!nsus.every((nsu) => Number.isSafeInteger(nsu) && nsu > 0)) throw new Error("invalid NSU");
+      xmls = gunzipBase64(...batch.map((doc) => String(doc.ArquivoXml ?? "")));
     } catch {
       throw new AdnError("unavailable", [], response.status);
     }
+    return batch.map((doc, index) => ({
+      nsu: nsus[index],
+      accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
+      type: String(doc.TipoDocumento ?? ""),
+      xml: xmls[index]
+    }));
   }
   const messages = toMessages2(json?.Erros);
   if (status === "REJEICAO") throw new AdnError("rejected", messages, response.status);
@@ -1166,6 +1186,7 @@ var AdnClient = class {
   buildDanfseModel,
   buildDps,
   dpsId,
+  isNfseOfDps,
   readNfseEventSummary,
   readNfseSummary,
   renderDanfse,

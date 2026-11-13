@@ -1,6 +1,21 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildDanfseModel, renderDanfse } from "../src/nfse";
+import { loadCertificate } from "../src";
+import { buildDanfseModel, buildDps, isNfseOfDps, renderDanfse, signDps, type DpsInput } from "../src/nfse";
+import { makePfx } from "./make-pfx";
+
+const dpsInput: DpsInput = {
+  environment: "restricted",
+  dhEmi: new Date("2026-10-26T19:20:30Z"),
+  dCompet: "2026-10-26",
+  serie: "00900",
+  nDPS: "1",
+  cLocEmi: "4208203",
+  verAplic: "fiscal-test-1",
+  prest: { CNPJ: "11222333000181", regTrib: { opSimpNac: 3, regApTribSN: 1, regEspTrib: 0 } },
+  serv: { cLocPrestacao: "4208203", cTribNac: "170303", cNBS: "114012900", xDescServ: "x" },
+  valores: { vServ: 10, tribISSQN: 1, tpRetISSQN: 1, totTrib: { pTotTribSN: 6 } },
+};
 
 // NFS-e 1 and 2 authorized by Sefin produção restrita on 2026-10-26.
 const fixture = (name: string) =>
@@ -171,6 +186,27 @@ describe("readNfseSummary", () => {
       issqnCents: 0,
       issqnInSimples: true,
     });
+  });
+});
+
+describe("isNfseOfDps", () => {
+  // After E0014 or a timeout, the note found by DPS Id must be the DPS this row signed, not
+  // another invoice that reused the same number.
+  const certificate = loadCertificate(makePfx({ password: "x", cnpj: "11222333000181" }), "x");
+  const signed = (xDescServ: string) =>
+    signDps(buildDps({ ...dpsInput, serv: { ...dpsInput.serv, xDescServ } }).xml, certificate);
+  const nfseWith = (signedDpsXml: string) =>
+    '<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01"><infNFSe Id="NFS1"><nNFSe>1</nNFSe>' +
+    signedDpsXml.replace(/^<\?xml[^>]*>/, "") +
+    "</infNFSe></NFSe>";
+
+  it("is true for the note that embeds this signed DPS", () => {
+    const dps = signed("Servico de março");
+    expect(isNfseOfDps(nfseWith(dps), dps)).toBe(true);
+  });
+
+  it("is false for a note with the same DPS Id but other content", () => {
+    expect(isNfseOfDps(nfseWith(signed("Servico de março")), signed("Servico de abril"))).toBe(false);
   });
 });
 

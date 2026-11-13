@@ -1,4 +1,4 @@
-import { E as Environment, C as Certificate } from '../environment-uA3KuLi2.cjs';
+import { E as Environment, C as Certificate } from '../environment-Cf62aP_K.cjs';
 
 interface StreetAddress {
     xLgr: string;
@@ -103,8 +103,8 @@ interface IbsCbs {
     indFinal: 0 | 1;
     /** Código indicador da operação (Anexo VII). */
     cIndOp: string;
-    /** 0: the taker is the recipient. 1: someone else is. */
-    indDest: 0 | 1;
+    /** 0: the taker is the recipient. A different recipient (1, with the `dest` group) is not supported yet. */
+    indDest: 0;
     /** Mandatory for cTribNac 99.04.01 (rental of movable goods). */
     bensMoveis?: MovableGood[];
     CST: string;
@@ -197,12 +197,14 @@ interface SefinMessage {
     complement?: string;
 }
 /**
- * - `rejected`: Sefin answered and refused the DPS. Nothing was issued;
- *   fix the input and send a new DPS (same Id is fine).
+ * - `rejected`: Sefin answered and refused the DPS. Nothing was issued, except
+ *   with code E0014 (this DPS already has a note: reconcile, do not resend);
+ *   fix the input and send the corrected DPS with the same `nDPS`.
  * - `unavailable`: no definitive answer (timeout, 5xx, network). The DPS
  *   MAY have been authorized: call `findAccessKeyByDpsId` before resending.
- *   With `httpStatus` 401 or 403, Sefin refused the TLS client certificate
- *   (expired, revoked, not an e-CNPJ) and did not process the DPS.
+ *
+ * Either kind with `httpStatus` 401 or 403: Sefin refused the TLS client
+ * certificate (expired, revoked, not an e-CNPJ) and did not process the DPS.
  */
 declare class SefinError extends Error {
     readonly kind: "rejected" | "unavailable";
@@ -212,7 +214,7 @@ declare class SefinError extends Error {
     constructor(kind: "rejected" | "unavailable", messages: SefinMessage[], httpStatus?: number | undefined);
 }
 interface IssuedNfse {
-    /** Chave de acesso, 50 digits. Persist it first: it identifies the note in every later call. */
+    /** Chave de acesso, 50 characters (letters only with an alphanumeric CNPJ). Persist it first. */
     accessKey: string;
     /** The authorized NFS-e XML signed by Sefin. Store it: the DANFSe is rendered from it. */
     nfseXml: string;
@@ -241,8 +243,9 @@ declare class SefinClient {
     emit(signedDpsXml: string): Promise<IssuedNfse>;
     /**
      * Registers a signed event (e.g. `buildCancellation`). Returns the event
-     * XML Sefin signed back. Resending an event that already went through is
-     * rejected by Sefin, so an `unavailable` error is safe to retry.
+     * XML Sefin signed back. After an `unavailable` error the event may have gone
+     * through: a retry is safe, but its rejection does not prove the event failed
+     * (see docs/integration.md, cancellation).
      */
     registerEvent(accessKey: string, signedEventXml: string): Promise<string>;
     /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */
@@ -318,7 +321,7 @@ interface NfseSummary {
     accessKey: string;
     /** nNFSe, the number the municipality shows on the note. */
     number: string | null;
-    /** CNPJ or CPF digits of the taker; null when the note has none. */
+    /** CNPJ (may have letters) or CPF of the taker, unmasked; null when the note has none. */
     takerDocument: string | null;
     /** vServ in cents. */
     serviceValueCents: number;
@@ -326,7 +329,7 @@ interface NfseSummary {
     competenceDate: string | null;
     /** xDescServ. */
     description: string | null;
-    /** CNPJ or CPF digits of the provider (emit). */
+    /** CNPJ (may have letters) or CPF of the provider (emit), unmasked. */
     providerDocument: string | null;
     /** xNome of the taker. */
     takerName: string | null;
@@ -349,6 +352,12 @@ interface NfseEventSummary {
 declare function readNfseSummary(nfseXml: string): NfseSummary;
 /** Reads an event XML distributed by the ADN (the registered event wraps the original request). */
 declare function readNfseEventSummary(eventXml: string): NfseEventSummary;
+/**
+ * True when `nfseXml` is the note Sefin issued for exactly this signed DPS: same DPS Id and same
+ * signed content. Use it after reconciliation (E0014, timeout) before accepting the note found by
+ * DPS Id, because another DPS that reused the number has the same Id but different content.
+ */
+declare function isNfseOfDps(nfseXml: string, signedDpsXml: string): boolean;
 
 interface AdnMessage {
     code: string;
@@ -375,7 +384,7 @@ interface AdnDocument {
 }
 interface AdnClientOptions {
     environment: Environment;
-    /** CNPJ whose documents are queried (digits); the certificate must belong to its root. */
+    /** CNPJ whose documents are queried (punctuation is ignored, letters kept); the certificate must belong to its root. */
     cnpj: string;
     certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">;
     timeoutMs?: number;
@@ -394,4 +403,4 @@ declare class AdnClient {
     fetchDocuments(lastNsu: number): Promise<AdnDocument[]>;
 }
 
-export { type Address, AdnClient, type AdnClientOptions, type AdnDocument, AdnError, type AdnMessage, type BuiltDps, type CancellationInput, type CancellationReason, type DanfseModel, type DpsInput, type DpsKey, Environment, type ForeignAddress, type ForeignTrade, type IbsCbs, type IssuedNfse, type MovableGood, type NationalAddress, type NfseEventSummary, type NfseSummary, type Provider, SefinClient, type SefinClientOptions, SefinError, type SefinMessage, type Service, type Taker, type TotTrib, type Values, buildCancellation, buildDanfseModel, buildDps, dpsId, readNfseEventSummary, readNfseSummary, renderDanfse, signDps };
+export { type Address, AdnClient, type AdnClientOptions, type AdnDocument, AdnError, type AdnMessage, type BuiltDps, type CancellationInput, type CancellationReason, type DanfseModel, type DpsInput, type DpsKey, Environment, type ForeignAddress, type ForeignTrade, type IbsCbs, type IssuedNfse, type MovableGood, type NationalAddress, type NfseEventSummary, type NfseSummary, type Provider, SefinClient, type SefinClientOptions, SefinError, type SefinMessage, type Service, type Taker, type TotTrib, type Values, buildCancellation, buildDanfseModel, buildDps, dpsId, isNfseOfDps, readNfseEventSummary, readNfseSummary, renderDanfse, signDps };

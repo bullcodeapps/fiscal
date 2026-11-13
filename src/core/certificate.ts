@@ -67,12 +67,11 @@ function extractCnpj(certificate: forge.pki.Certificate): string | null {
 
 // node-forge instead of Node's TLS `pfx` option because OpenSSL 3 rejects the
 // RC2/3DES-encrypted bundles many Brazilian CAs still issue.
-// node-forge instead of Node's TLS `pfx` option because OpenSSL 3 rejects the
-// RC2/3DES-encrypted bundles many Brazilian CAs still issue.
 // forge parses and derives keys synchronously (~3 ms per 1,000 iterations),
 // so an untrusted file must be small and cheap before it reaches forge. Real
 // A1 files are a few KB, with 2,000 to ~100,000 iterations per derivation.
 const MAX_PFX_BYTES = 64 * 1024;
+const MAX_PASSWORD_LENGTH = 256;
 const MAX_TOTAL_KDF_ITERATIONS = 300_000n;
 
 /**
@@ -107,8 +106,8 @@ function totalIterations(node: forge.asn1.Asn1): bigint {
  *
  * Extraction only: the ICP-Brasil chain is not validated, so `cnpj` is not proof that the uploader owns it.
  *
- * @throws {CertificateError} `unreadable` (wrong password, bad file, over 64 KB or 300,000 total KDF
- * iterations), `missing_key`, `missing_cnpj`.
+ * @throws {CertificateError} `unreadable` (wrong password, bad file, file over 64 KB, password over 256
+ * characters, or over 300,000 total KDF iterations), `missing_key`, `missing_cnpj`.
  * @example
  * const certificate = loadCertificate(readFileSync("cert.pfx"), password);
  * certificate.cnpj; // "11222333000181"
@@ -117,7 +116,7 @@ function totalIterations(node: forge.asn1.Asn1): bigint {
 export function loadCertificate(pfx: Buffer, password: string): Certificate {
   let p12: forge.pkcs12.Pkcs12Pfx;
   try {
-    if (pfx.length > MAX_PFX_BYTES) throw new Error("file above size cap");
+    if (pfx.length > MAX_PFX_BYTES || password.length > MAX_PASSWORD_LENGTH) throw new Error("input above size cap");
     const asn1 = forge.asn1.fromDer(pfx.toString("binary"));
     if (totalIterations(asn1) > MAX_TOTAL_KDF_ITERATIONS) throw new Error("iterations above cap");
     p12 = forge.pkcs12.pkcs12FromAsn1(asn1, password);

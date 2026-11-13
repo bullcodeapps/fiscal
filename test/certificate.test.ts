@@ -20,6 +20,17 @@ describe("loadCertificate", () => {
     expect(certificate.certificatePem).toContain("BEGIN CERTIFICATE");
   });
 
+  it("refuses a password longer than 256 characters, which forge expands synchronously", () => {
+    const password = "p".repeat(300);
+    let error: unknown;
+    try {
+      loadCertificate(makePfx({ password, cnpj: "11222333000181" }), password);
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect((error as CertificateError).code).toBe("unreadable");
+  });
+
   it("keeps the letters of an alphanumeric CNPJ", () => {
     const certificate = loadCertificate(makePfx({ password: "x", cnpj: "12ABC34501DE35" }), "x");
 

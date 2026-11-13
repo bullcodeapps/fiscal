@@ -135,7 +135,12 @@ describe("export of services", () => {
     {
       name: "comExt with a national taker",
       toma: accepted.toma,
-      message: "serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF",
+      message: "serv: comExt requires a taker abroad (NIF or cNaoNIF)",
+    },
+    {
+      name: "comExt with no taker",
+      toma: undefined,
+      message: "serv: comExt requires a taker abroad (NIF or cNaoNIF)",
     },
   ])("rejects $name", ({ toma, message }) => {
     expect(() => buildDps({ ...exported, toma })).toThrow(message);

@@ -5,9 +5,21 @@ import type { Certificate } from "../core/certificate";
 // Notes and pages of 50 documents are far below this; anything larger is not a valid answer.
 const MAX_BYTES = 10 * 1024 * 1024;
 
-/** Decodes a base64 gzip payload. Throws on malformed data or output above 10 MB. */
-export function gunzipBase64(value: string): string {
-  return gunzipSync(Buffer.from(value, "base64"), { maxOutputLength: MAX_BYTES }).toString("utf8");
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * Decodes base64 gzip payloads against one shared budget of 10 MB of output, so a page of
+ * documents cannot inflate past it either. Throws on malformed data or when the budget runs out.
+ */
+export function gunzipBase64(...values: string[]): string[] {
+  let budget = MAX_BYTES;
+  return values.map((value) => {
+    if (!BASE64.test(value)) throw new Error("malformed base64");
+    const xml = gunzipSync(Buffer.from(value, "base64"), { maxOutputLength: Math.max(budget, 1) });
+    budget -= xml.length;
+    if (budget < 0) throw new Error("decompressed output above size cap");
+    return xml.toString("utf8");
+  });
 }
 
 export interface RawResponse {

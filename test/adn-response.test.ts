@@ -67,4 +67,25 @@ describe("interpretDistribution", () => {
     expect(error).toBeInstanceOf(AdnError);
     expect((error as AdnError).kind).toBe("unavailable");
   });
+
+  const page = (docs: unknown[]) => ({
+    status: 200,
+    body: JSON.stringify({ StatusProcessamento: "DOCUMENTOS_LOCALIZADOS", LoteDFe: docs }),
+  });
+  const gz = (bytes: number) => gzipSync(Buffer.alloc(bytes)).toString("base64");
+
+  it.each([
+    // Each document is under the cap; together they would inflate a small body into memory.
+    { scenario: "a page above 10 MB once decompressed", docs: [1, 2, 3].map((nsu) => ({ NSU: nsu, TipoDocumento: "NFSE", ArquivoXml: gz(4 * 1024 * 1024) })) },
+    { scenario: "an NSU that is not a positive integer", docs: [{ NSU: "abc", TipoDocumento: "NFSE", ArquivoXml: gz(10) }] },
+    { scenario: "base64 with characters outside the alphabet", docs: [{ NSU: 1, TipoDocumento: "NFSE", ArquivoXml: `${gz(10)}!!` }] },
+  ])("treats $scenario as unavailable", ({ docs }) => {
+    let error: unknown;
+    try {
+      interpretDistribution(page(docs));
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect((error as AdnError).kind).toBe("unavailable");
+  });
 });

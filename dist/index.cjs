@@ -72,6 +72,7 @@ function extractCnpj(certificate) {
   return null;
 }
 var MAX_PFX_BYTES = 64 * 1024;
+var MAX_PASSWORD_LENGTH = 256;
 var MAX_TOTAL_KDF_ITERATIONS = 300000n;
 function totalIterations(node) {
   if (Array.isArray(node.value)) {
@@ -94,7 +95,7 @@ function totalIterations(node) {
 function loadCertificate(pfx, password) {
   let p12;
   try {
-    if (pfx.length > MAX_PFX_BYTES) throw new Error("file above size cap");
+    if (pfx.length > MAX_PFX_BYTES || password.length > MAX_PASSWORD_LENGTH) throw new Error("input above size cap");
     const asn1 = import_node_forge.default.asn1.fromDer(pfx.toString("binary"));
     if (totalIterations(asn1) > MAX_TOTAL_KDF_ITERATIONS) throw new Error("iterations above cap");
     p12 = import_node_forge.default.pkcs12.pkcs12FromAsn1(asn1, password);

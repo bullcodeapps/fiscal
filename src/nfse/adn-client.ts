@@ -69,16 +69,20 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
   if (status === "NENHUM_DOCUMENTO_LOCALIZADO") return [];
   if (status === "DOCUMENTOS_LOCALIZADOS" && response.status >= 200 && response.status < 300) {
     const batch = Array.isArray(json?.LoteDFe) ? (json.LoteDFe as Record<string, unknown>[]) : [];
+    const nsus = batch.map((doc) => Number(doc.NSU));
+    let xmls: string[];
     try {
-      return batch.map((doc) => ({
-        nsu: Number(doc.NSU),
-        accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
-        type: String(doc.TipoDocumento ?? ""),
-        xml: gunzipBase64(String(doc.ArquivoXml ?? "")),
-      }));
+      if (!nsus.every((nsu) => Number.isSafeInteger(nsu) && nsu > 0)) throw new Error("invalid NSU");
+      xmls = gunzipBase64(...batch.map((doc) => String(doc.ArquivoXml ?? "")));
     } catch {
       throw new AdnError("unavailable", [], response.status);
     }
+    return batch.map((doc, index) => ({
+      nsu: nsus[index],
+      accessKey: typeof doc.ChaveAcesso === "string" ? doc.ChaveAcesso : null,
+      type: String(doc.TipoDocumento ?? ""),
+      xml: xmls[index],
+    }));
   }
   const messages = toMessages(json?.Erros);
   if (status === "REJEICAO") throw new AdnError("rejected", messages, response.status);
@@ -87,7 +91,7 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
 
 export interface AdnClientOptions {
   environment: Environment;
-  /** CNPJ whose documents are queried (digits); the certificate must belong to its root. */
+  /** CNPJ whose documents are queried (punctuation is ignored, letters kept); the certificate must belong to its root. */
   cnpj: string;
   certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">;
   timeoutMs?: number;
