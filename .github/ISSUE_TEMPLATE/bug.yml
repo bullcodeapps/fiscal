@@ -1,0 +1,36 @@
+name: Bug report
+description: Something in @bullcode/fiscal behaves wrongly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste certificates, passwords, CPF, signed XML or real taxpayer data. Anonymize XML and remove its `<Signature>`.
+        Report security problems privately: Security > Report a vulnerability.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.3.4
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Sefin environment
+      options: [produção restrita, produção, not related]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The call, the input (anonymized), the result and the Sefin codes, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true

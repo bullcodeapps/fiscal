@@ -6,6 +6,7 @@ Install with `pnpm add @bullcode/fiscal`.
 
 - Published on npm as `@bullcode/fiscal`. `dist` is no longer committed, so install from npm. Git tags up to
   v0.3.3 keep their committed `dist`.
+- Releases publish from CI with npm provenance. CI runs on Node 20, 22 and 24.
 
 ## v0.3.3 (2026-11-13)
 

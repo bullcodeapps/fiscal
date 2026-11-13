@@ -1,5 +1,6 @@
 # @bullcode/fiscal
 
+[![CI](https://github.com/bullcodeapps/fiscal/actions/workflows/ci.yml/badge.svg)](https://github.com/bullcodeapps/fiscal/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@bullcode/fiscal)](https://www.npmjs.com/package/@bullcode/fiscal)
 [![skills.sh](https://skills.sh/b/bullcodeapps/fiscal)](https://skills.sh/bullcodeapps/fiscal)
 [![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
@@ -122,6 +123,11 @@ pnpm build && node scripts/smoke-restricted.mjs cert.pfx password.txt          #
 pnpm build && node scripts/smoke-export-restricted.mjs cert.pfx password.txt   # foreign taker
 pnpm build && node scripts/cancel-restricted.mjs cert.pfx password.txt <accessKey>
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) and the [Code of Conduct](./CODE_OF_CONDUCT.md). Report security
+problems privately, as [SECURITY.md](./SECURITY.md) describes.
 
 ## License
 

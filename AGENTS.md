@@ -25,11 +25,11 @@ pnpm check:docs   # builds, then type-checks every ts block in README.md and doc
 
 ## Releases
 
-Consumers install from npm. To release:
+Consumers install from npm. `main` is protected: every change goes through a PR with green CI.
 
-1. Bump `version` in `package.json` and add the entry to `CHANGELOG.md`.
-2. Tag `vX.Y.Z` on `main` and push the tag.
-3. Run `pnpm publish`. `prepublishOnly` runs typecheck, tests and `check:docs` (which builds `dist`).
+To release, bump `version` in `package.json` and add the `CHANGELOG.md` entry in a PR. When it merges,
+`.github/workflows/release.yml` publishes to npm through trusted publishing (with provenance), tags `vX.Y.Z` and
+creates the GitHub release. `prepublishOnly` runs typecheck, tests and `check:docs` (which builds `dist`).
 
 ## Tests
 
