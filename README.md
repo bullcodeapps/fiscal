@@ -11,10 +11,8 @@ DANFSe PDF. The library is stateless: storage of certificates, DPS numbering and
 ## Install
 
 ```sh
-pnpm add github:bullcodeapps/fiscal#v0.3.3
+pnpm add @bullcode/fiscal
 ```
-
-`dist` is committed, so installs never build.
 
 ## Quick start
 
@@ -92,7 +90,7 @@ npx skills add bullcodeapps/fiscal
 pnpm install
 pnpm typecheck
 pnpm test
-pnpm build      # run and commit dist before tagging a release
+pnpm build
 ```
 
 `packageManager` pins pnpm 10. See [AGENTS.md](./AGENTS.md) for contributor notes.

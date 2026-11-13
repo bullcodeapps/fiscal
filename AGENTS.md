@@ -25,11 +25,11 @@ pnpm check:docs   # builds, then type-checks every ts block in README.md and doc
 
 ## Releases
 
-`dist` is committed because consumers install from git tags and never build. Before tagging:
+Consumers install from npm. To release:
 
-1. Bump `version` in `package.json`.
-2. Run `pnpm check:docs` (it builds) and commit `dist` with the source change.
-3. Tag `vX.Y.Z`.
+1. Bump `version` in `package.json` and add the entry to `CHANGELOG.md`.
+2. Tag `vX.Y.Z` on `main` and push the tag.
+3. Run `pnpm publish`. `prepublishOnly` runs typecheck, tests and `check:docs` (which builds `dist`).
 
 ## Tests
 

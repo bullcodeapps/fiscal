@@ -15,4 +15,4 @@ description: Use when implementing, changing or debugging NFS-e Nacional issuanc
 6. Go through the checklist at the end of `integration.md` and confirm each item in the code.
 
 If `node_modules/@bullcode/fiscal/docs` is missing, the package is not installed or is older than the docs.
-Install it with `pnpm add github:bullcodeapps/fiscal#<latest tag>`.
+Install it with `pnpm add @bullcode/fiscal`.
