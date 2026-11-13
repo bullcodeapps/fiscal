@@ -7,6 +7,14 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # @types/node follows the lowest Node version in engines.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 has no compiler API, which tsup needs to emit .d.ts.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
   - package-ecosystem: github-actions
     directory: /
