@@ -21,12 +21,17 @@ export class CertificateError extends Error {
   }
 }
 
+/** An opened A1 e-CNPJ. Holds the private key: keep it in memory only, never log or persist it. */
 export interface Certificate {
+  /** The holder's CNPJ, 14 digits. Use it as `prest.CNPJ` and `authorCnpj`. */
   cnpj: string;
+  /** Subject CN, usually "RAZAO SOCIAL:CNPJ". */
   subjectName: string;
+  /** Issuing CA CN. */
   issuerName: string;
   serialNumber: string;
   validFrom: Date;
+  /** Sefin refuses an expired certificate at the TLS handshake (HTTP 401/403). */
   validTo: Date;
   privateKeyPem: string;
   certificatePem: string;
@@ -60,11 +65,8 @@ function extractCnpj(certificate: forge.pki.Certificate): string | null {
   return null;
 }
 
-/**
- * Opens an A1 (.pfx / .p12) certificate. node-forge instead of Node's TLS
- * `pfx` option because OpenSSL 3 rejects the RC2/3DES-encrypted bundles many
- * Brazilian CAs still issue.
- */
+// node-forge instead of Node's TLS `pfx` option because OpenSSL 3 rejects the
+// RC2/3DES-encrypted bundles many Brazilian CAs still issue.
 // node-forge derives keys in synchronous JS (~3 ms per 1,000 iterations) and
 // takes the count from the file before checking the password, so an untrusted
 // .pfx could freeze the event loop. Real A1 exports use 2,000 to ~100,000.
@@ -99,6 +101,15 @@ function exceedsIterationCap(node: forge.asn1.Asn1): boolean {
   return false;
 }
 
+/**
+ * Opens an ICP-Brasil A1 e-CNPJ (.pfx / .p12) and reads its CNPJ.
+ *
+ * @throws {CertificateError} `unreadable` (wrong password or bad file), `missing_key`, `missing_cnpj`.
+ * @example
+ * const certificate = loadCertificate(readFileSync("cert.pfx"), password);
+ * certificate.cnpj; // "11222333000181"
+ * @see docs/integration.md section 2
+ */
 export function loadCertificate(pfx: Buffer, password: string): Certificate {
   let p12: forge.pkcs12.Pkcs12Pfx;
   try {

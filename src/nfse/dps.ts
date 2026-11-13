@@ -3,15 +3,9 @@ import { brazilDateTime, decimal, group, leaf } from "../core/xml";
 
 export type { Environment };
 
-/**
- * DPS (Declaração de Prestação de Serviço) input. Field names are the
- * official layout names, so each one can be looked up in the Anexo I / VI
- * spreadsheets of the NFS-e Nacional documentation.
- *
- * Layout: Sefin validates each environment against a different schema.
- * Produção runs nfse-esquemas_xsd-v1-01-20260209; produção restrita already
- * runs the NT 009 one (esquemas_prod_restrita_20261020). test/xsd holds both.
- */
+// Sefin validates each environment against a different schema. Produção runs
+// nfse-esquemas_xsd-v1-01-20260209; produção restrita already runs the NT 009
+// one (esquemas_prod_restrita_20261020). test/xsd holds both.
 
 interface StreetAddress {
   xLgr: string;
@@ -150,18 +144,27 @@ export interface Values {
   totTrib: TotTrib;
 }
 
+/**
+ * DPS (Declaração de Prestação de Serviço) input. Field names are the official layout names, so each one
+ * can be looked up in the Anexo I / VI spreadsheets of the NFS-e Nacional documentation.
+ * @see docs/dps-input.md for every field and complete examples.
+ */
 export interface DpsInput {
+  /** Must match the `SefinClient` environment that will send it. */
   environment: Environment;
+  /** Emission time. Sefin rejects a time in the future. */
   dhEmi: Date;
   /** YYYY-MM-DD. */
   dCompet: string;
   /** 00001-49999 is the range for the taxpayer's own software. */
   serie: string;
+  /** Positive integer as a string, unique per CNPJ + serie + environment. Allocate it atomically. */
   nDPS: string;
   /** IBGE code of the issuing municipality. */
   cLocEmi: string;
   /** Issuing software version, max 20 characters. */
   verAplic: string;
+  /** `prest.CNPJ` must be the certificate's CNPJ. */
   prest: Provider;
   toma?: Taker;
   serv: Service;
@@ -170,7 +173,9 @@ export interface DpsInput {
 }
 
 export interface BuiltDps {
+  /** DPS Id. Persist it: `SefinClient.findAccessKeyByDpsId` reconciles by it. */
   id: string;
+  /** Unsigned DPS XML. Pass it to `signDps`. */
   xml: string;
 }
 
@@ -301,6 +306,14 @@ function ibsCbs(value: IbsCbs | undefined, nt009: boolean): string {
   );
 }
 
+/** The fields that form the DPS Id attribute, which is not escaped. */
+function assertKeyFields(input: DpsInput): void {
+  if (!/^\d{7}$/.test(input.cLocEmi)) throw new Error("cLocEmi: must be the 7-digit IBGE code");
+  if (!/^\d{14}$/.test(input.prest.CNPJ)) throw new Error("prest: CNPJ must be 14 digits");
+  if (!/^\d{1,5}$/.test(input.serie)) throw new Error("serie: must be 1 to 5 digits");
+  if (!/^[1-9]\d{0,14}$/.test(input.nDPS)) throw new Error("nDPS: must be 1 to 15 digits, not starting with 0");
+}
+
 /** Sefin business rules the XSD does not express. */
 function assertExportRules(input: DpsInput): void {
   const { toma, serv, valores } = input;
@@ -324,7 +337,19 @@ function assertExportRules(input: DpsInput): void {
   }
 }
 
+/**
+ * Builds the unsigned DPS XML in the layout Sefin validates for `input.environment`.
+ * Pure and offline.
+ *
+ * @throws {Error} When `input` breaks a Sefin rule the XSD does not express. The message starts with the
+ * DPS group (`toma:`, `serv:`, `valores:`) and names the Sefin code it prevents.
+ * @example
+ * const dps = buildDps(input);
+ * const signed = signDps(dps.xml, certificate);
+ * @see docs/dps-input.md
+ */
 export function buildDps(input: DpsInput): BuiltDps {
+  assertKeyFields(input);
   assertExportRules(input);
   const id = dpsId({
     cLocEmi: input.cLocEmi,

@@ -34,6 +34,13 @@ describe("buildCancellation", () => {
     expect(verifier.checkSignature(xml)).toBe(true);
   });
 
+  it.each([
+    [{ accessKey: "4208203" }, "accessKey must be the 50-digit chave de acesso"],
+    [{ authorCnpj: "1\"><x" }, "authorCnpj must be 14 digits"],
+  ])("rejects a malformed key before it reaches the Id attribute (%o)", (patch, message) => {
+    expect(() => buildCancellation({ ...input, ...patch }, certificate)).toThrow(message);
+  });
+
   it.each(["curto demais", "x".repeat(256)])("rejects a justification outside 15-255 characters", (description) => {
     expect(() => buildCancellation({ ...input, description }, certificate)).toThrow(RangeError);
   });

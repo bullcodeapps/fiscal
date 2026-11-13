@@ -1,14 +1,5 @@
-import { E as Environment, C as Certificate } from '../environment-fHjUnJ9t.cjs';
+import { E as Environment, C as Certificate } from '../environment-BnNMo0kQ.cjs';
 
-/**
- * DPS (Declaração de Prestação de Serviço) input. Field names are the
- * official layout names, so each one can be looked up in the Anexo I / VI
- * spreadsheets of the NFS-e Nacional documentation.
- *
- * Layout: Sefin validates each environment against a different schema.
- * Produção runs nfse-esquemas_xsd-v1-01-20260209; produção restrita already
- * runs the NT 009 one (esquemas_prod_restrita_20261020). test/xsd holds both.
- */
 interface StreetAddress {
     xLgr: string;
     nro: string;
@@ -140,18 +131,27 @@ interface Values {
     pAliq?: number;
     totTrib: TotTrib;
 }
+/**
+ * DPS (Declaração de Prestação de Serviço) input. Field names are the official layout names, so each one
+ * can be looked up in the Anexo I / VI spreadsheets of the NFS-e Nacional documentation.
+ * @see docs/dps-input.md for every field and complete examples.
+ */
 interface DpsInput {
+    /** Must match the `SefinClient` environment that will send it. */
     environment: Environment;
+    /** Emission time. Sefin rejects a time in the future. */
     dhEmi: Date;
     /** YYYY-MM-DD. */
     dCompet: string;
     /** 00001-49999 is the range for the taxpayer's own software. */
     serie: string;
+    /** Positive integer as a string, unique per CNPJ + serie + environment. Allocate it atomically. */
     nDPS: string;
     /** IBGE code of the issuing municipality. */
     cLocEmi: string;
     /** Issuing software version, max 20 characters. */
     verAplic: string;
+    /** `prest.CNPJ` must be the certificate's CNPJ. */
     prest: Provider;
     toma?: Taker;
     serv: Service;
@@ -159,7 +159,9 @@ interface DpsInput {
     IBSCBS?: IbsCbs;
 }
 interface BuiltDps {
+    /** DPS Id. Persist it: `SefinClient.findAccessKeyByDpsId` reconciles by it. */
     id: string;
+    /** Unsigned DPS XML. Pass it to `signDps`. */
     xml: string;
 }
 interface DpsKey {
@@ -170,8 +172,23 @@ interface DpsKey {
 }
 /** "DPS" + cLocEmi(7) + tpInsc(1) + inscrição(14) + série(5) + nDPS(15). */
 declare function dpsId(input: DpsKey): string;
+/**
+ * Builds the unsigned DPS XML in the layout Sefin validates for `input.environment`.
+ * Pure and offline.
+ *
+ * @throws {Error} When `input` breaks a Sefin rule the XSD does not express. The message starts with the
+ * DPS group (`toma:`, `serv:`, `valores:`) and names the Sefin code it prevents.
+ * @example
+ * const dps = buildDps(input);
+ * const signed = signDps(dps.xml, certificate);
+ * @see docs/dps-input.md
+ */
 declare function buildDps(input: DpsInput): BuiltDps;
 
+/**
+ * Signs a DPS from `buildDps` with the certificate (XMLDSig, RSA-SHA256). Persist the result before
+ * calling `SefinClient.emit`: after an `unavailable` error the same signed XML is resent.
+ */
 declare function signDps(dpsXml: string, certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">): string;
 
 interface SefinMessage {
@@ -184,6 +201,8 @@ interface SefinMessage {
  *   fix the input and send a new DPS (same Id is fine).
  * - `unavailable`: no definitive answer (timeout, 5xx, network). The DPS
  *   MAY have been authorized: call `findAccessKeyByDpsId` before resending.
+ *   With `httpStatus` 401 or 403, Sefin refused the TLS client certificate
+ *   (expired, revoked, not an e-CNPJ) and did not process the DPS.
  */
 declare class SefinError extends Error {
     readonly kind: "rejected" | "unavailable";
@@ -193,16 +212,26 @@ declare class SefinError extends Error {
     constructor(kind: "rejected" | "unavailable", messages: SefinMessage[], httpStatus?: number | undefined);
 }
 interface IssuedNfse {
+    /** Chave de acesso, 50 digits. Persist it first: it identifies the note in every later call. */
     accessKey: string;
+    /** The authorized NFS-e XML signed by Sefin. Store it: the DANFSe is rendered from it. */
     nfseXml: string;
     dpsId: string;
+    /** Non-blocking warnings. */
     alerts: SefinMessage[];
 }
 interface SefinClientOptions {
     environment: Environment;
+    /** The provider's A1, used for mTLS. */
     certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">;
+    /** Per request. Default 30000. A timeout throws `SefinError` `unavailable`. */
     timeoutMs?: number;
 }
+/**
+ * Sefin Nacional over mTLS: emission, events, reconciliation and NFS-e lookup.
+ * Every method throws `SefinError`; see its `kind` for what to do next.
+ * @see docs/integration.md sections 5 to 7
+ */
 declare class SefinClient {
     private readonly baseUrl;
     private readonly agent;
@@ -218,6 +247,7 @@ declare class SefinClient {
     registerEvent(accessKey: string, signedEventXml: string): Promise<string>;
     /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */
     findAccessKeyByDpsId(dpsId: string): Promise<string | null>;
+    /** The authorized NFS-e XML. `rejected` (HTTP 404) when the key does not exist in this environment. */
     getNfseXml(accessKey: string): Promise<string>;
     private request;
 }

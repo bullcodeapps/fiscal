@@ -8,8 +8,8 @@ import { makePfx } from "./make-pfx";
 const fixture = (name: string) =>
   readFileSync(new URL(`./fixtures/${name}.xml`, import.meta.url), "utf8").trim();
 
-// Both fixtures are the exact DPS bodies Sefin produção restrita authorized
-// on 2026-10-26 (NFS-e 1 and 2 of CNPJ 11222333000181).
+// Both fixtures are DPS bodies Sefin produção restrita authorized on
+// 2026-10-26, with the provider anonymized to CNPJ 11222333000181.
 const accepted: DpsInput = {
   environment: "restricted",
   dhEmi: new Date("2026-10-26T19:20:30Z"),
@@ -158,6 +158,16 @@ describe("export of services", () => {
     expect(() =>
       buildDps({ ...exported, serv: { ...exported.serv, cPaisPrestacao: "US" } }),
     ).toThrow("serv: exactly one of cLocPrestacao or cPaisPrestacao");
+  });
+
+  // These fields form the DPS Id attribute: a bad value breaks the XML or comes back as E0004.
+  it.each([
+    [{ cLocEmi: "420820" }, "cLocEmi: must be the 7-digit IBGE code"],
+    [{ prest: { ...accepted.prest, CNPJ: "11.222.333/0001-81" } }, "prest: CNPJ must be 14 digits"],
+    [{ serie: "1\"><x" }, "serie: must be 1 to 5 digits"],
+    [{ nDPS: "0" }, "nDPS: must be 1 to 15 digits, not starting with 0"],
+  ])("rejects a DPS key field Sefin would refuse (%o)", (patch, message) => {
+    expect(() => buildDps({ ...accepted, ...patch })).toThrow(message);
   });
 
   it("rejects a service with neither cLocPrestacao nor cPaisPrestacao", () => {

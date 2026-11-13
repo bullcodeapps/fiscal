@@ -66,8 +66,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "fast-xml-parser": "^5.11.2",
-    "node-forge": "^1.4.0",
+    "fast-xml-parser": "^5.12.0",
+    "node-forge": "^1.4.3",
     "pdfkit": "^0.17.2",
     "qrcode": "^1.5.4",
     "xml-crypto": "^6.4.0"

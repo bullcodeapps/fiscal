@@ -20,6 +20,8 @@ export interface SefinMessage {
  *   fix the input and send a new DPS (same Id is fine).
  * - `unavailable`: no definitive answer (timeout, 5xx, network). The DPS
  *   MAY have been authorized: call `findAccessKeyByDpsId` before resending.
+ *   With `httpStatus` 401 or 403, Sefin refused the TLS client certificate
+ *   (expired, revoked, not an e-CNPJ) and did not process the DPS.
  */
 export class SefinError extends Error {
   public readonly name = "SefinError";
@@ -38,9 +40,12 @@ export class SefinError extends Error {
 }
 
 export interface IssuedNfse {
+  /** Chave de acesso, 50 digits. Persist it first: it identifies the note in every later call. */
   accessKey: string;
+  /** The authorized NFS-e XML signed by Sefin. Store it: the DANFSe is rendered from it. */
   nfseXml: string;
   dpsId: string;
+  /** Non-blocking warnings. */
   alerts: SefinMessage[];
 }
 
@@ -112,10 +117,17 @@ export function interpretEvent(response: RawResponse): string {
 
 export interface SefinClientOptions {
   environment: Environment;
+  /** The provider's A1, used for mTLS. */
   certificate: Pick<Certificate, "privateKeyPem" | "certificatePem">;
+  /** Per request. Default 30000. A timeout throws `SefinError` `unavailable`. */
   timeoutMs?: number;
 }
 
+/**
+ * Sefin Nacional over mTLS: emission, events, reconciliation and NFS-e lookup.
+ * Every method throws `SefinError`; see its `kind` for what to do next.
+ * @see docs/integration.md sections 5 to 7
+ */
 export class SefinClient {
   private readonly baseUrl: string;
   private readonly agent: https.Agent;
@@ -160,6 +172,7 @@ export class SefinClient {
     throw new SefinError("unavailable", toMessages(json?.erros), response.status);
   }
 
+  /** The authorized NFS-e XML. `rejected` (HTTP 404) when the key does not exist in this environment. */
   async getNfseXml(accessKey: string): Promise<string> {
     const response = await this.request("GET", `/nfse/${encodeURIComponent(accessKey)}`);
     const json = parseJson(response.body);

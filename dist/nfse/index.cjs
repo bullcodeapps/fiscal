@@ -158,6 +158,12 @@ function ibsCbs(value, nt009) {
     )
   );
 }
+function assertKeyFields(input) {
+  if (!/^\d{7}$/.test(input.cLocEmi)) throw new Error("cLocEmi: must be the 7-digit IBGE code");
+  if (!/^\d{14}$/.test(input.prest.CNPJ)) throw new Error("prest: CNPJ must be 14 digits");
+  if (!/^\d{1,5}$/.test(input.serie)) throw new Error("serie: must be 1 to 5 digits");
+  if (!/^[1-9]\d{0,14}$/.test(input.nDPS)) throw new Error("nDPS: must be 1 to 15 digits, not starting with 0");
+}
 function assertExportRules(input) {
   const { toma, serv, valores } = input;
   const foreignId = toma !== void 0 && ("NIF" in toma || "cNaoNIF" in toma);
@@ -179,6 +185,7 @@ function assertExportRules(input) {
   }
 }
 function buildDps(input) {
+  assertKeyFields(input);
   assertExportRules(input);
   const id = dpsId({
     cLocEmi: input.cLocEmi,
@@ -410,6 +417,7 @@ var SefinClient = class {
     }
     throw new SefinError("unavailable", toMessages(json?.erros), response.status);
   }
+  /** The authorized NFS-e XML. `rejected` (HTTP 404) when the key does not exist in this environment. */
   async getNfseXml(accessKey) {
     const response = await this.request("GET", `/nfse/${encodeURIComponent(accessKey)}`);
     const json = parseJson(response.body);
@@ -988,6 +996,8 @@ var NAMESPACE2 = "http://www.sped.fazenda.gov.br/nfse";
 var LAYOUT_VERSION2 = "1.01";
 var CANCELLATION = "101101";
 function buildCancellation(input, certificate) {
+  if (!/^\d{50}$/.test(input.accessKey)) throw new RangeError("accessKey must be the 50-digit chave de acesso");
+  if (!/^\d{14}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits");
   const description = input.description.trim();
   if (description.length < 15 || description.length > 255) {
     throw new RangeError("A justificativa do cancelamento deve ter entre 15 e 255 caracteres.");

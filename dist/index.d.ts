@@ -1,5 +1,5 @@
-import { C as Certificate } from './environment-fHjUnJ9t.js';
-export { a as CertificateError, b as CertificateErrorCode, E as Environment, l as loadCertificate } from './environment-fHjUnJ9t.js';
+import { C as Certificate } from './environment-BnNMo0kQ.js';
+export { a as CertificateError, b as CertificateErrorCode, E as Environment, l as loadCertificate } from './environment-BnNMo0kQ.js';
 
 /**
  * Enveloped XMLDSig over the element carrying the `Id` attribute
