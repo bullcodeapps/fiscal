@@ -4,7 +4,7 @@ import type { Certificate } from "../core/certificate";
 import type { Environment } from "../core/environment";
 import { assertWellFormed } from "../core/xml";
 import { gunzipBase64, mtlsAgent, request, type RawResponse } from "./http";
-import { isAccessKey, nfseAccessKey, registeredEvent, requestEventCode } from "./summary";
+import { isAccessKey, nfseAccessKey, readEventRequest, registeredEvent } from "./summary";
 
 const BASE_URLS: Record<Environment, string> = {
   production: "https://sefin.nfse.gov.br/SefinNacional",
@@ -18,14 +18,14 @@ export interface SefinMessage {
 }
 
 /**
- * - `rejected`: Sefin answered and refused the DPS. Nothing was issued, except
- *   with code E0014 (this DPS already has a note: reconcile, do not resend);
- *   fix the input and send the corrected DPS with the same `nDPS`.
- * - `unavailable`: no definitive answer (timeout, 5xx, network). The DPS
- *   MAY have been authorized: call `findAccessKeyByDpsId` before resending.
+ * - `rejected`: Sefin answered with an error for this request.
+ * - `unavailable`: no answer the client can trust (timeout, 5xx, network,
+ *   malformed or oversized body). The operation MAY have happened.
+ * - Either kind with `httpStatus` 401 or 403: Sefin refused the TLS client
+ *   certificate and did not process this request.
  *
- * Either kind with `httpStatus` 401 or 403: Sefin refused the TLS client
- * certificate (expired, revoked, not an e-CNPJ) and did not process the DPS.
+ * What each kind means for each method (emit, events, lookups) is in
+ * docs/errors.md; the method docs below say what to do next.
  */
 export class SefinError extends Error {
   public readonly name = "SefinError";
@@ -180,8 +180,9 @@ export function interpretEventLookup(response: RawResponse, expected: EventRef):
 
 /** Maps a raw answer of `GET /dps/{id}` to the access key, null when Sefin has no note for it, or a SefinError. */
 export function interpretDpsLookup(response: RawResponse): string | null {
-  if (response.status === 404) return null;
   const json = parseJson(response.body);
+  // Only Sefin's error envelope (ResponseErro) means "no note"; a gateway's 404 proves nothing.
+  if (response.status === 404 && isRecord(json?.erro) && !Array.isArray(json.erro)) return null;
   if (response.status === 200 && isAccessKey(json?.chaveAcesso)) return json.chaveAcesso;
   throw new SefinError("unavailable", toMessages(json?.erros ?? json?.erro), response.status);
 }
@@ -237,8 +238,10 @@ export class SefinClient {
    * (see docs/integration.md, cancellation).
    */
   async registerEvent(accessKey: string, signedEventXml: string): Promise<string> {
-    const type = requestEventCode(signedEventXml);
-    if (!type) throw new Error("registerEvent: signedEventXml is not a pedRegEvento (use buildCancellation)");
+    const request = readEventRequest(signedEventXml);
+    if (!request) throw new Error("registerEvent: signedEventXml is not a pedRegEvento (use buildCancellation)");
+    if (request.accessKey !== accessKey) throw new Error("registerEvent: accessKey is not the chNFSe of signedEventXml");
+    const type = request.code;
     const body = JSON.stringify({
       pedidoRegistroEventoXmlGZipB64: gzipSync(signedEventXml).toString("base64"),
     });

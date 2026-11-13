@@ -54,6 +54,9 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
 - `readNfseEventSummary` reads only the registered request (`evento/infEvento/pedRegEvento/infPedReg`); a bare
   request returns code null.
 - `buildCancellation` counts the justification in characters, not UTF-16 units.
+- `findAccessKeyByDpsId` returns null only for Sefin's 404 error JSON; a gateway 404 is `unavailable`.
+- `registerEvent` throws if `accessKey` is not the `chNFSe` of the signed request.
+- `readNfseSummary` returns `dpsId`, so an import can recognize the app's own notes before their key is known.
 - `findEvent` returns null only for a 404 whose `erro` is an object; the ADN empty queue only on HTTP 200 or 404.
 - MIT license.
 - node-forge 1.4.3 and fast-xml-parser 5.12.0 (security advisories).

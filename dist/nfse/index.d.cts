@@ -198,14 +198,14 @@ interface SefinMessage {
     complement?: string;
 }
 /**
- * - `rejected`: Sefin answered and refused the DPS. Nothing was issued, except
- *   with code E0014 (this DPS already has a note: reconcile, do not resend);
- *   fix the input and send the corrected DPS with the same `nDPS`.
- * - `unavailable`: no definitive answer (timeout, 5xx, network). The DPS
- *   MAY have been authorized: call `findAccessKeyByDpsId` before resending.
+ * - `rejected`: Sefin answered with an error for this request.
+ * - `unavailable`: no answer the client can trust (timeout, 5xx, network,
+ *   malformed or oversized body). The operation MAY have happened.
+ * - Either kind with `httpStatus` 401 or 403: Sefin refused the TLS client
+ *   certificate and did not process this request.
  *
- * Either kind with `httpStatus` 401 or 403: Sefin refused the TLS client
- * certificate (expired, revoked, not an e-CNPJ) and did not process the DPS.
+ * What each kind means for each method (emit, events, lookups) is in
+ * docs/errors.md; the method docs below say what to do next.
  */
 declare class SefinError extends Error {
     readonly kind: "rejected" | "unavailable";
@@ -362,6 +362,8 @@ interface NfseSummary {
     issqnCents: number;
     /** regApTribSN = 1: the ISSQN is paid inside the Simples Nacional DAS, not on its own. */
     issqnInSimples: boolean;
+    /** Id of the DPS the note came from ("DPS" + 42 characters): matches `buildDps(...).id`. */
+    dpsId: string | null;
 }
 interface NfseEventSummary {
     /** chNFSe the event refers to. */

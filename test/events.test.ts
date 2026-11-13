@@ -1,7 +1,7 @@
 import { SignedXml } from "xml-crypto";
 import { describe, expect, it } from "vitest";
 import { loadCertificate } from "../src";
-import { buildCancellation } from "../src/nfse";
+import { buildCancellation, SefinClient } from "../src/nfse";
 import { makePfx } from "./make-pfx";
 
 const certificate = loadCertificate(makePfx({ password: "x", cnpj: "11222333000181" }), "x");
@@ -16,6 +16,17 @@ const input = {
   verAplic: "bullcode-fiscal",
   at: new Date("2026-10-26T22:00:00Z"),
 };
+
+describe("SefinClient.registerEvent", () => {
+  // The URL names the note Sefin records the event on; a request for another note must not reach it.
+  it("refuses a request for another note before any network call", async () => {
+    const client = new SefinClient({ environment: "restricted", certificate });
+    const other = `${ACCESS_KEY.slice(0, -1)}4`;
+    await expect(client.registerEvent(other, buildCancellation(input, certificate))).rejects.toThrow(
+      "registerEvent: accessKey is not the chNFSe of signedEventXml",
+    );
+  });
+});
 
 describe("buildCancellation", () => {
   // Same shape Sefin produção restrita registered on 2026-10-26 (NFS-e 4).

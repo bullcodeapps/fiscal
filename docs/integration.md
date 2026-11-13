@@ -69,7 +69,7 @@ Create the row before you talk to Sefin. Suggested columns:
 | `sentAt` | Right before each `client.emit` |
 | `accessKey` | As soon as Sefin returns it. Never cleared. |
 | `nfseXml` | After authorization (from `emit` or `getNfseXml`) |
-| `status` | `draft`, `issuing`, `authorized`, `rejected`, `unavailable`, `conflict`, `cancelling`, `cancelled` |
+| `status` | `draft`, `issuing`, `authorized`, `rejected`, `unavailable`, `conflict`, `cancelling`, `cancelled`, `substituted` (cancelled by event 105102: another note replaced it) |
 | `lease` | Set by each attempt that claims the row (steps 8 and 11) |
 | `cancelEventXml` | The signed cancellation request, stored when the user asks to cancel (step 11) |
 | `cancelSentAt` | Right before each `registerEvent` |
@@ -177,7 +177,8 @@ type Status =
   | "unavailable"
   | "conflict"
   | "cancelling"
-  | "cancelled";
+  | "cancelled"
+  | "substituted";
 
 interface NoteRow {
   id: string;
@@ -329,8 +330,8 @@ const cancelledPdf = await renderDanfse(nfseXml, { situation: "cancelled" }); //
 ```
 
 Render from the stored `nfseXml` at any time and re-render on demand. The XML does not say whether the note was
-later cancelled or replaced, so pass `situation` from the row: `"cancelled"` when it is `cancelled` (NT 008
-requires the watermark), `"substituted"` when another note replaced it (event 105102). `buildDanfseModel(nfseXml,
+later cancelled or replaced, so pass `situation` from the row's status: `"cancelled"` for `cancelled` and
+`"substituted"` for `substituted` (NT 008 requires the watermark). `buildDanfseModel(nfseXml,
 options)` returns the same content as data, for a custom layout.
 
 ## 10. Read a note
@@ -340,7 +341,7 @@ import { readNfseSummary } from "@bullcode/fiscal/nfse";
 
 const summary = readNfseSummary(nfseXml);
 // accessKey, number (nNFSe), providerDocument, takerDocument, takerName, takerNif,
-// serviceValueCents, issqnCents, issqnInSimples, competenceDate, issuedAt, description
+// serviceValueCents, issqnCents, issqnInSimples, competenceDate, issuedAt, description, dpsId
 ```
 
 Use it to show the note. To check that a note found by reconciliation is this row's note, use `isNfseOfDps` (step 7).
@@ -356,11 +357,11 @@ atomic write that moves the row from `authorized` to `cancelling` and stores `ca
 
 ```ts
 import type { Certificate, Environment } from "@bullcode/fiscal";
-import { buildCancellation, SefinClient, SefinError, type CancellationReason, type SefinMessage } from "@bullcode/fiscal/nfse";
+import { buildCancellation, readNfseEventSummary, SefinClient, SefinError, type CancellationReason, type SefinMessage } from "@bullcode/fiscal/nfse";
 
 interface CancelRow {
   environment: Environment;
-  status: "authorized" | "cancelling" | "cancelled";
+  status: "authorized" | "cancelling" | "cancelled" | "substituted";
   accessKey: string;
   cancelEventXml: string | null;
   cancelSentAt: Date | null;
@@ -442,8 +443,10 @@ async function send(store: CancelStore, id: string, lease: string, client: Cance
   const save = (values: Partial<CancelRow>) => store.patch(id, lease, values);
   const row = await store.load(id);
   const cancelled = async (eventXml: string) => {
-    await save({ status: "cancelled", cancellationXml: eventXml, messages: null });
-    return "cancelled";
+    // Event 105102 means another note replaced this one: its DANFSe says SUBSTITUÍDA, not CANCELADA.
+    const status = readNfseEventSummary(eventXml).code === "105102" ? "substituted" : "cancelled";
+    await save({ status, cancellationXml: eventXml, messages: null });
+    return status;
   };
   const stay = async (e: SefinError) => {
     await save({ messages: e.messages });
@@ -476,7 +479,7 @@ async function send(store: CancelStore, id: string, lease: string, client: Cance
 
 | Outcome | Row |
 | --- | --- |
-| `registerEvent` succeeds, or `findEvent` finds the event | `cancelled`, with the event XML |
+| `registerEvent` succeeds, or `findEvent` finds the event | `cancelled` (`substituted` for event 105102), with the event XML |
 | `rejected` and no cancelling event exists | Back to `authorized`, with the messages. Common causes: a municipal limit (deadline, default 730 days; value; taxes already paid). See the event codes in [codes.md](./codes.md). |
 | `unavailable`, 401/403, or `findEvent` fails | Stays `cancelling`, with the messages. Retry later. On 401/403 the stored request is signed with the refused certificate: replace the certificate, then call `requestCancel` again with it. The event Id does not change, so `findEvent` still finds an earlier send. |
 
@@ -491,7 +494,7 @@ cancellations: use `findAccessKeyByDpsId` and `findEvent` for those. Treat ADN d
 already tracks as idempotent updates.
 
 Store notes issued elsewhere in their own table (access key, environment, the `readNfseSummary` fields, the
-XML, `authorized` or `cancelled`), not as `NoteRow`: they have no DPS, `serie` or `nDPS` of yours.
+XML, `authorized`, `cancelled` or `substituted`), not as `NoteRow`: they have no DPS, `serie` or `nDPS` of yours.
 
 NSUs are numbered per interested CNPJ, so the cursor and the runner lock are scoped per (environment,
 queried CNPJ): one `AdnStore` per pair.
@@ -508,6 +511,8 @@ interface AdnStore {
    * takes over a lease older than 10 minutes, so a crashed run never blocks the importer for good.
    */
   lock(): Promise<string | null>;
+  /** Restarts the 10 minutes of this lease; throws if another run took it over. */
+  renew(lease: string): Promise<void>;
   /** Releases only this lease. */
   unlock(lease: string): Promise<void>;
   /** The highest NSU applied so far; 0 before the first import. */
@@ -530,6 +535,7 @@ export async function importFromAdn(
     for (;;) {
       const page = await adn.fetchDocuments(await store.lastNsu()); // up to 50, NSU order
       if (page.length === 0) return;
+      await store.renew(lease); // a long backlog must not look like a crashed run
       for (const doc of page) await store.apply(lease, doc); // one at a time, in NSU order
     }
   } finally {
@@ -543,13 +549,14 @@ What `apply` does, inside its transaction, failing when `lease` is no longer hel
 - Store every document's raw `doc.xml` by `doc.nsu`, whatever its type.
 - For `NFSE` and `EVENTO`, `doc.accessKey` is the note's key, read from the document's own XML and checked
   against the envelope. Use it as the key.
-- `doc.type === "NFSE"`: when the app issued the note (a `NoteRow` with this `accessKey`), do not change it: the
-  issuance worker owns its status. Otherwise upsert the imported note with `readNfseSummary(doc.xml)`.
+- `doc.type === "NFSE"`: read it with `readNfseSummary(doc.xml)`. When the app issued the note (a `NoteRow` with
+  this `accessKey`, or with `dpsId` equal to the summary's `dpsId`: the ADN can deliver it before reconciliation
+  stores the key), do not change it: the issuance worker owns its status. Otherwise upsert the imported note.
 - `doc.type === "EVENTO"`: read it with `readNfseEventSummary(doc.xml)`. When its `code` is in
   `CANCELLING_EVENTS`:
-  - An imported note: set it to `cancelled`.
-  - A `NoteRow` in `authorized` or `cancelling`: set it to `cancelled` and clear its lease in the same update, so a
-    stale worker's later fenced write fails instead of overwriting `cancelled`.
+  - An imported note: set it to `substituted` for code 105102, else `cancelled`.
+  - A `NoteRow` in `authorized` or `cancelling`: the same, and clear its lease in the same update, so a stale
+    worker's later fenced write fails instead of overwriting it.
   - A `NoteRow` in any other status (issuance not settled, or `conflict`): do not change it. Keep the event and
     alert a person: the note was cancelled outside the app before the app recorded it.
 - Any other type: keep the raw XML only. Never fail the import on a type you do not know.
@@ -593,5 +600,5 @@ For unit tests in your app, pass a fake to `issue` (`IssueClient`) and `cancel` 
 - [ ] `nfseXml` stored as personal data; DANFSe rendered from it, with `situation` for a cancelled or substituted note
 - [ ] `issued.alerts` logged
 - [ ] Cancellation validated with `buildCancellation` at request time and started with one atomic `requestCancellation`; `cancelSentAt` persisted before each send; `findEvent` before any resend or final rejection
-- [ ] ADN import: cursor and lease per (environment, CNPJ), one runner at a time, each document and a forward-only cursor in one transaction fenced by that lease; any cancelling event (101101, 105102, 105104, 305101) sets `cancelled` and clears the note's lease; never the only confirmation of the app's own notes or cancellations
+- [ ] ADN import: cursor and lease per (environment, CNPJ), one runner at a time, each document and a forward-only cursor in one transaction fenced by that lease; any cancelling event (101101, 105102, 105104, 305101) sets `cancelled` (`substituted` for 105102) and clears the note's lease; own notes found by `accessKey` or `dpsId`; never the only confirmation of the app's own notes or cancellations
 - [ ] Environment stored per note and used for queries and cancellation

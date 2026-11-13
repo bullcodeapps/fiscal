@@ -225,5 +225,11 @@ describe("access key identity", () => {
   it("treats a DPS lookup answering a malformed key as unavailable", () => {
     expectUnavailable(() => interpretDpsLookup({ status: 200, body: JSON.stringify({ chaveAcesso: "junk" }) }));
   });
+
+  // A gateway 404 read as "no note" would let the worker resend or discard the signed DPS of an issued note.
+  it("returns null only for Sefin's ResponseErro 404", () => {
+    expect(interpretDpsLookup({ status: 404, body: JSON.stringify({ tipoAmbiente: 2, erro: { codigo: "E2220" } }) })).toBeNull();
+    expectUnavailable(() => interpretDpsLookup({ status: 404, body: "<html>Not Found</html>" }));
+  });
 });
 

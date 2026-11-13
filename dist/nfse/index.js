@@ -290,7 +290,8 @@ function readNfseSummary(nfseXml) {
     takerNif: text2(toma?.NIF),
     issuedAt: text2(infDps?.dhEmi),
     issqnCents: Math.round(Number(inf?.valores?.vISSQN ?? 0) * 100),
-    issqnInSimples: String(infDps?.prest?.regTrib?.regApTribSN ?? "") === "1"
+    issqnInSimples: String(infDps?.prest?.regTrib?.regApTribSN ?? "") === "1",
+    dpsId: text2(infDps?.["@_Id"])
   };
 }
 function readNfseEventSummary(eventXml) {
@@ -298,8 +299,10 @@ function readNfseEventSummary(eventXml) {
   const infPedReg = parser.parse(eventXml)?.evento?.infEvento?.pedRegEvento?.infPedReg;
   return { accessKey: String(infPedReg?.chNFSe ?? ""), code: eventCode(infPedReg) };
 }
-function requestEventCode(requestXml) {
-  return eventCode(parseOrNull(requestXml)?.pedRegEvento?.infPedReg);
+function readEventRequest(requestXml) {
+  const infPedReg = parseOrNull(requestXml)?.pedRegEvento?.infPedReg;
+  const code = eventCode(infPedReg);
+  return code ? { accessKey: String(infPedReg?.chNFSe ?? ""), code } : null;
 }
 function eventCode(infPedReg) {
   const key = Object.keys(infPedReg && typeof infPedReg === "object" ? infPedReg : {}).find((k) => /^e\d{6}$/.test(k));
@@ -445,8 +448,8 @@ function interpretEventLookup(response, expected) {
   );
 }
 function interpretDpsLookup(response) {
-  if (response.status === 404) return null;
   const json = parseJson(response.body);
+  if (response.status === 404 && isRecord(json?.erro) && !Array.isArray(json.erro)) return null;
   if (response.status === 200 && isAccessKey(json?.chaveAcesso)) return json.chaveAcesso;
   throw new SefinError("unavailable", toMessages(json?.erros ?? json?.erro), response.status);
 }
@@ -482,8 +485,10 @@ var SefinClient = class {
    * (see docs/integration.md, cancellation).
    */
   async registerEvent(accessKey, signedEventXml) {
-    const type = requestEventCode(signedEventXml);
-    if (!type) throw new Error("registerEvent: signedEventXml is not a pedRegEvento (use buildCancellation)");
+    const request2 = readEventRequest(signedEventXml);
+    if (!request2) throw new Error("registerEvent: signedEventXml is not a pedRegEvento (use buildCancellation)");
+    if (request2.accessKey !== accessKey) throw new Error("registerEvent: accessKey is not the chNFSe of signedEventXml");
+    const type = request2.code;
     const body = JSON.stringify({
       pedidoRegistroEventoXmlGZipB64: gzipSync(signedEventXml).toString("base64")
     });

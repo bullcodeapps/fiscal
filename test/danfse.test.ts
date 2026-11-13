@@ -224,8 +224,12 @@ describe("renderDanfse", () => {
   });
 
   it("keeps a cancelled note on one page with its watermark", async () => {
-    const pdf = await renderDanfse(fixture("nfse-990401"), { situation: "cancelled" });
-    expect(pdf.toString("latin1").match(/\/Type \/Page\b(?!s)/g)).toHaveLength(1);
+    const plain = (await renderDanfse(fixture("nfse-990401"))).toString("latin1");
+    const pdf = (await renderDanfse(fixture("nfse-990401"), { situation: "cancelled" })).toString("latin1");
+    expect(pdf.match(/\/Type \/Page\b(?!s)/g)).toHaveLength(1);
+    // Only the watermark is translucent: its graphics state is the observable sign it was drawn.
+    expect(plain).not.toContain("/ca 0.6");
+    expect(pdf).toContain("/ca 0.6");
   });
 });
 
@@ -243,6 +247,7 @@ describe("readNfseSummary", () => {
       takerName: "BANCO DO BRASIL SA",
       takerNif: null,
       issuedAt: "2026-10-26T16:21:03-03:00",
+      dpsId: "DPS420820321122233300018100900000001793042463",
       issqnCents: 0,
       issqnInSimples: true,
     });

@@ -80,7 +80,7 @@ Per method:
 | `emit` | DPS refused | Note may exist: reconcile |
 | `registerEvent` | Event refused (already cancelled, deadline passed, ...). It is final only when `findEvent` returns null: the refusal can be the duplicate of an event that went through | Look up with `findEvent` before resending |
 | `findEvent` | 4xx with messages: retry later, never read it as "no event" | Retry later. Only `null` (a 404 with Sefin's `erro` JSON) means the note has no such event |
-| `findAccessKeyByDpsId` | never (404 returns `null`) | Retry later. Also for an answer whose key is not a valid chave |
+| `findAccessKeyByDpsId` | never (`null` only for a 404 with Sefin's `erro` JSON) | Retry later. Also for an answer whose key is not a valid chave, or a 404 that is not Sefin's (a gateway page) |
 | `getNfseXml` | 404: no note with this key in this environment. For a key you already stored (just emitted or reconciled), treat it as transient and retry | Retry later |
 
 Common Sefin codes are listed in the Anexo of the NFS-e Nacional documentation. Examples the library already

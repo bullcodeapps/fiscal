@@ -25,6 +25,8 @@ export interface NfseSummary {
   issqnCents: number;
   /** regApTribSN = 1: the ISSQN is paid inside the Simples Nacional DAS, not on its own. */
   issqnInSimples: boolean;
+  /** Id of the DPS the note came from ("DPS" + 42 characters): matches `buildDps(...).id`. */
+  dpsId: string | null;
 }
 
 export interface NfseEventSummary {
@@ -64,6 +66,7 @@ export function readNfseSummary(nfseXml: string): NfseSummary {
     issuedAt: text(infDps?.dhEmi),
     issqnCents: Math.round(Number(inf?.valores?.vISSQN ?? 0) * 100),
     issqnInSimples: String(infDps?.prest?.regTrib?.regApTribSN ?? "") === "1",
+    dpsId: text(infDps?.["@_Id"]),
   };
 }
 
@@ -78,9 +81,11 @@ export function readNfseEventSummary(eventXml: string): NfseEventSummary {
   return { accessKey: String(infPedReg?.chNFSe ?? ""), code: eventCode(infPedReg) };
 }
 
-/** The event code of a signed request (`pedRegEvento`), as `buildCancellation` returns it, or null. */
-export function requestEventCode(requestXml: string): string | null {
-  return eventCode(parseOrNull(requestXml)?.pedRegEvento?.infPedReg);
+/** The note and event code of a signed request (`pedRegEvento`), as `buildCancellation` returns it, or null. */
+export function readEventRequest(requestXml: string): { accessKey: string; code: string } | null {
+  const infPedReg = parseOrNull(requestXml)?.pedRegEvento?.infPedReg;
+  const code = eventCode(infPedReg);
+  return code ? { accessKey: String(infPedReg?.chNFSe ?? ""), code } : null;
 }
 
 function eventCode(infPedReg: unknown): string | null {
