@@ -261,7 +261,12 @@ export async function issue(
   if (!accessKey) {
     if (!signed) {
       try {
-        const dps = buildDps(inputFor(row));
+        const input = inputFor(row);
+        // The number was allocated with the row: a value from a form would desync the counter.
+        if (input.environment !== row.environment || input.serie !== row.serie || input.nDPS !== row.nDPS) {
+          throw new Error("inputFor must use the row's environment, serie and nDPS");
+        }
+        const dps = buildDps(input);
         signed = signDps(dps.xml, certificate);
         await save({ dpsId: dps.id, signedDpsXml: signed, messages: null });
       } catch (e) {
@@ -360,13 +365,17 @@ interface CancelRow {
 interface CancelStore {
   load(id: string): Promise<CancelRow>;
   /**
-   * ONE atomic write: compare-and-set "authorized" to "cancelling", storing `cancelEventXml` and clearing
-   * `cancelSentAt`. False when the row is not "authorized".
+   * ONE atomic write, false when neither case applies:
+   * - "authorized" to "cancelling": store `cancelEventXml`, clear `cancelSentAt`.
+   * - "cancelling" with no lease held (a retry after 401/403): replace `cancelEventXml` only, so the new
+   *   certificate signs it. Keep `cancelSentAt`: an earlier send may have gone through.
    */
   requestCancellation(id: string, cancelEventXml: string): Promise<boolean>;
-  /** Lease on a "cancelling" row, with the same rules as issuance (a stale lease can be taken over). */
+  /** Lease on a "cancelling" row, or null while another worker holds one. A lease older than 10 minutes is stale. */
   claim(id: string): Promise<string | null>;
   patch(id: string, lease: string, values: Partial<CancelRow>): Promise<void>;
+  /** Clears the lease if it is still `lease`. */
+  release(id: string, lease: string): Promise<void>;
 }
 
 const CANCELLATION = "101101";
@@ -383,8 +392,8 @@ async function findCancellation(client: CancelClient, accessKey: string): Promis
 }
 
 /**
- * Request time. Throws RangeError on invalid input: answer the user, no state change. False when the note is not
- * "authorized" (already cancelling or cancelled).
+ * Request time, and the retry after a refused certificate. Throws RangeError on invalid input: answer the user,
+ * no state change. False when the note cannot take a request now (cancelled, or a worker is sending).
  */
 export async function requestCancel(
   store: CancelStore,
@@ -416,6 +425,14 @@ type CancelClient = Pick<SefinClient, "registerEvent" | "findEvent">;
 export async function cancel(store: CancelStore, id: string, client: CancelClient) {
   const lease = await store.claim(id);
   if (!lease) return (await store.load(id)).status;
+  try {
+    return await send(store, id, lease, client);
+  } finally {
+    await store.release(id, lease);
+  }
+}
+
+async function send(store: CancelStore, id: string, lease: string, client: CancelClient) {
   const save = (values: Partial<CancelRow>) => store.patch(id, lease, values);
   const row = await store.load(id);
   const cancelled = async (eventXml: string) => {
@@ -455,7 +472,7 @@ export async function cancel(store: CancelStore, id: string, client: CancelClien
 | --- | --- |
 | `registerEvent` succeeds, or `findEvent` finds the event | `cancelled`, with the event XML |
 | `rejected` and no cancelling event exists | Back to `authorized`, with the messages. Common causes: a municipal limit (deadline, default 730 days; value; taxes already paid). See the event codes in [codes.md](./codes.md). |
-| `unavailable`, 401/403, or `findEvent` fails | Stays `cancelling`, with the messages. Retry later. On 401/403 the stored request is signed with the refused certificate: replace the certificate, then build the request again with `buildCancellation` and the new certificate, and store it with `patch` under a claimed lease before the next attempt. The event Id does not change, so `findEvent` still finds an earlier send. |
+| `unavailable`, 401/403, or `findEvent` fails | Stays `cancelling`, with the messages. Retry later. On 401/403 the stored request is signed with the refused certificate: replace the certificate, then call `requestCancel` again with it. The event Id does not change, so `findEvent` still finds an earlier send. |
 
 After the municipal deadline, only the taxpayer can ask for análise fiscal in the national portal.
 
@@ -523,9 +540,12 @@ What `apply` does, inside its transaction, failing when `lease` is no longer hel
 - `doc.type === "NFSE"`: when the app issued the note (a `NoteRow` with this `accessKey`), do not change it: the
   issuance worker owns its status. Otherwise upsert the imported note with `readNfseSummary(doc.xml)`.
 - `doc.type === "EVENTO"`: read it with `readNfseEventSummary(doc.xml)`. When its `code` is in
-  `CANCELLING_EVENTS`, set the note with `doc.accessKey` (`NoteRow` or imported) to `cancelled` from any status
-  except `cancelled`, and clear the note's lease in the same update, so a stale worker's later fenced write fails
-  instead of overwriting `cancelled`.
+  `CANCELLING_EVENTS`:
+  - An imported note: set it to `cancelled`.
+  - A `NoteRow` in `authorized` or `cancelling`: set it to `cancelled` and clear its lease in the same update, so a
+    stale worker's later fenced write fails instead of overwriting `cancelled`.
+  - A `NoteRow` in any other status (issuance not settled, or `conflict`): do not change it. Keep the event and
+    alert a person: the note was cancelled outside the app before the app recorded it.
 - Any other type: keep the raw XML only. Never fail the import on a type you do not know.
 - The parsers throw `Error` on malformed XML. That rolls back the transaction and the cursor stays put: alert
   someone and retry later.
@@ -537,7 +557,7 @@ order. The library does not detect NSU gaps (documents the ADN skips). If the ap
 
 `AdnError.kind`: `rate_limited` (HTTP 429, stop and resume later), `rejected` (the certificate may not query
 this CNPJ), `unavailable` (retry later, also for oversized or malformed answers). Run the import on a schedule,
-not in a tight loop.
+not in a tight loop: after a page with no documents, wait at least one hour before asking again (ADN manual).
 
 ## 13. Test against produção restrita
 

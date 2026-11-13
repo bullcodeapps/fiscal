@@ -183,6 +183,10 @@ function assertExportRules(input) {
   if ((foreignAddress || serv.cPaisPrestacao !== void 0 || valores.tribISSQN === 3) && !serv.comExt) {
     throw new Error("serv: comExt is required for a taker abroad, a service abroad or an export (E0330)");
   }
+  if (valores.tribISSQN === 2) throw new Error("valores: tribISSQN 2 (immunity) is not supported");
+  if (valores.tpRetISSQN === 3) {
+    throw new Error("valores: tpRetISSQN 3 (withheld by an intermediary) is not supported");
+  }
   if (valores.tribISSQN === 3 && !valores.cPaisResult) {
     throw new Error("valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)");
   }
@@ -370,10 +374,21 @@ function readNfseEventSummary(eventXml) {
   };
 }
 function registeredEvent(eventXml) {
-  const sequence = /<(?:\w+:)?infEvento\b[\s\S]*?<(?:\w+:)?nSeqEvento>(\d+)</.exec(eventXml)?.[1];
-  if (sequence === void 0) return null;
-  const { accessKey, code } = readNfseEventSummary(eventXml);
-  return isAccessKey(accessKey) && code ? { accessKey, code, sequence: Number(sequence) } : null;
+  const infEvento = parseOrNull(eventXml)?.evento?.infEvento;
+  const infPedReg = infEvento?.pedRegEvento?.infPedReg;
+  const sequence = String(infEvento?.nSeqEvento ?? "");
+  const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
+  const accessKey = infPedReg?.chNFSe;
+  if (!/^\d+$/.test(sequence) || !codeKey || !isAccessKey(accessKey)) return null;
+  return { accessKey, code: codeKey.slice(1), sequence: Number(sequence) };
+}
+function parseOrNull(xml) {
+  try {
+    assertWellFormed(xml);
+    return parser.parse(xml);
+  } catch {
+    return null;
+  }
 }
 function findKey(node, key) {
   if (!node || typeof node !== "object") return void 0;
@@ -392,10 +407,11 @@ function isNfseOfDps(nfseXml, signedDpsXml) {
   return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
 }
 var ACCESS_KEY = /^[0-9A-Z]{50}$/;
-var NFSE_ID = /<(?:\w+:)?infNFSe\b[^>]*\bId="NFS([0-9A-Z]{50})"/;
 var isAccessKey = (value) => typeof value === "string" && ACCESS_KEY.test(value);
 function nfseAccessKey(nfseXml) {
-  return NFSE_ID.exec(nfseXml)?.[1] ?? null;
+  const id = parseOrNull(nfseXml)?.NFSe?.infNFSe?.["@_Id"];
+  const key = typeof id === "string" ? id.replace(/^NFS/, "") : null;
+  return isAccessKey(key) && id === `NFS${key}` ? key : null;
 }
 
 // src/nfse/sefin-client.ts
@@ -1208,6 +1224,7 @@ function interpretDistribution(response) {
       throw new AdnError("unavailable", [], response.status);
     }
     return batch.map((doc, index) => {
+      if (doc.ChaveAcesso != null && !isAccessKey(doc.ChaveAcesso)) throw new AdnError("unavailable", [], response.status);
       const envelopeKey = isAccessKey(doc.ChaveAcesso) ? doc.ChaveAcesso : null;
       let xmlKey = null;
       if (doc.TipoDocumento === "NFSE") xmlKey = nfseAccessKey(xmls[index]);

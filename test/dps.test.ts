@@ -189,6 +189,15 @@ describe("export of services", () => {
     expect(() => buildDps({ ...accepted, ...patch })).toThrow(message);
   });
 
+  // The DPS has no tpImunidade or intermediary group, so these notes would be refused or incomplete.
+  it.each([
+    [{ tribISSQN: 2 }, "valores: tribISSQN 2 (immunity) is not supported"],
+    [{ tpRetISSQN: 3 }, "valores: tpRetISSQN 3 (withheld by an intermediary) is not supported"],
+  ])("rejects a tax case the DPS cannot describe (%o), which settings cast past the types", (patch, message) => {
+    const valores = { ...accepted.valores, ...patch } as unknown as typeof accepted.valores;
+    expect(() => buildDps({ ...accepted, valores })).toThrow(message);
+  });
+
   it("rejects a service with neither cLocPrestacao nor cPaisPrestacao", () => {
     expect(() =>
       buildDps({ ...exported, serv: { ...exported.serv, cLocPrestacao: undefined } }),

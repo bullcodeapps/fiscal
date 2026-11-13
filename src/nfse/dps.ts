@@ -134,12 +134,12 @@ export type TotTrib =
 
 export interface Values {
   vServ: number;
-  /** 1 Tributável, 2 Imunidade, 3 Exportação, 4 Não incidência. */
-  tribISSQN: 1 | 2 | 3 | 4;
+  /** 1 Tributável, 3 Exportação, 4 Não incidência. 2 (Imunidade) needs tpImunidade, which is not supported. */
+  tribISSQN: 1 | 3 | 4;
   /** ISO code of the country where the result of an exported service happens; Sefin requires it on exports (E0590). */
   cPaisResult?: string;
-  /** 1 Não retido, 2 Retido pelo tomador, 3 Retido pelo intermediário. */
-  tpRetISSQN: 1 | 2 | 3;
+  /** 1 Não retido, 2 Retido pelo tomador. 3 (by the intermediary) needs the interm group, which is not supported. */
+  tpRetISSQN: 1 | 2;
   /** ISS rate in %, only when the municipality does not fix it. */
   pAliq?: number;
   totTrib: TotTrib;
@@ -329,6 +329,10 @@ function assertExportRules(input: DpsInput): void {
   }
   if ((foreignAddress || serv.cPaisPrestacao !== undefined || valores.tribISSQN === 3) && !serv.comExt) {
     throw new Error("serv: comExt is required for a taker abroad, a service abroad or an export (E0330)");
+  }
+  if ((valores.tribISSQN as number) === 2) throw new Error("valores: tribISSQN 2 (immunity) is not supported");
+  if ((valores.tpRetISSQN as number) === 3) {
+    throw new Error("valores: tpRetISSQN 3 (withheld by an intermediary) is not supported");
   }
   if (valores.tribISSQN === 3 && !valores.cPaisResult) {
     throw new Error("valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)");

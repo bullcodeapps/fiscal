@@ -121,6 +121,11 @@ describe("interpretEvent", () => {
     { scenario: "XML that is not well formed", xml: "<evento><infEvento>" },
     { scenario: "an event of another note", xml: eventXmlFor("4208203221122233300018100000000000012610451306851X".replace("X", "9")) },
     { scenario: "another event type", xml: eventXmlFor(KEY, "105102") },
+    // Only a request inside infEvento was registered; one beside an empty infEvento proves nothing.
+    {
+      scenario: "a request outside infEvento",
+      xml: `<evento><infEvento/><nSeqEvento>1</nSeqEvento><pedRegEvento><infPedReg><chNFSe>${KEY}</chNFSe><e101101/></infPedReg></pedRegEvento></evento>`,
+    },
   ])("treats $scenario as unavailable", ({ xml }) => {
     expectUnavailable(() => interpretEvent({ status: 201, body: JSON.stringify({ eventoXmlGZipB64: gz(xml) }) }, { accessKey: KEY, type: "101101" }));
   });
@@ -194,6 +199,11 @@ describe("access key identity", () => {
   it.each([
     { scenario: "a key that is not the note's", body: { chaveAcesso: OTHER, nfseXmlGZipB64: nfse(KEY) } },
     { scenario: "a malformed key", body: { chaveAcesso: "junk", nfseXmlGZipB64: nfse("junk") } },
+    // A key in a comment is not the note's Id: the real infNFSe names another note.
+    {
+      scenario: "the announced key only in a comment",
+      body: { chaveAcesso: KEY, nfseXmlGZipB64: gz(`<NFSe><!-- <infNFSe Id="NFS${KEY}"> --><infNFSe Id="NFS${OTHER}"><nNFSe>1</nNFSe></infNFSe></NFSe>`) },
+    },
     {
       scenario: "XML that is not valid UTF-8",
       body: { chaveAcesso: KEY, nfseXmlGZipB64: gzipSync(Buffer.concat([Buffer.from(`<NFSe><infNFSe Id="NFS${KEY}"><x>`), Buffer.from([0xff]), Buffer.from("</x></infNFSe></NFSe>")])).toString("base64") },

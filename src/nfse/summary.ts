@@ -79,14 +79,26 @@ export function readNfseEventSummary(eventXml: string): NfseEventSummary {
 }
 
 /**
- * The note, code and sequence of a registered event: infEvento with its nSeqEvento around the request.
- * Null for anything else, including the bare request, which proves nothing.
+ * The note, code and sequence of a registered event: `evento/infEvento` with its nSeqEvento and the request
+ * inside it. Null for anything else, including malformed XML and the bare request, which proves nothing.
  */
 export function registeredEvent(eventXml: string): { accessKey: string; code: string; sequence: number } | null {
-  const sequence = /<(?:\w+:)?infEvento\b[\s\S]*?<(?:\w+:)?nSeqEvento>(\d+)</.exec(eventXml)?.[1];
-  if (sequence === undefined) return null;
-  const { accessKey, code } = readNfseEventSummary(eventXml);
-  return isAccessKey(accessKey) && code ? { accessKey, code, sequence: Number(sequence) } : null;
+  const infEvento = parseOrNull(eventXml)?.evento?.infEvento;
+  const infPedReg = infEvento?.pedRegEvento?.infPedReg;
+  const sequence = String(infEvento?.nSeqEvento ?? "");
+  const codeKey = Object.keys(infPedReg ?? {}).find((key) => /^e\d{6}$/.test(key));
+  const accessKey = infPedReg?.chNFSe;
+  if (!/^\d+$/.test(sequence) || !codeKey || !isAccessKey(accessKey)) return null;
+  return { accessKey, code: codeKey.slice(1), sequence: Number(sequence) };
+}
+
+function parseOrNull(xml: string): ReturnType<typeof parser.parse> | null {
+  try {
+    assertWellFormed(xml);
+    return parser.parse(xml);
+  } catch {
+    return null;
+  }
 }
 
 function findKey(node: unknown, key: string): unknown {
@@ -114,12 +126,13 @@ export function isNfseOfDps(nfseXml: string, signedDpsXml: string): boolean {
 }
 
 const ACCESS_KEY = /^[0-9A-Z]{50}$/;
-const NFSE_ID = /<(?:\w+:)?infNFSe\b[^>]*\bId="NFS([0-9A-Z]{50})"/;
 
 /** A chave de acesso: 50 digits, or digits and uppercase letters with an alphanumeric CNPJ. */
 export const isAccessKey = (value: unknown): value is string => typeof value === "string" && ACCESS_KEY.test(value);
 
-/** The access key in the note's own `infNFSe/@Id`, or null. */
+/** The access key in the note's own `NFSe/infNFSe/@Id`, or null (also for malformed XML). */
 export function nfseAccessKey(nfseXml: string): string | null {
-  return NFSE_ID.exec(nfseXml)?.[1] ?? null;
+  const id = parseOrNull(nfseXml)?.NFSe?.infNFSe?.["@_Id"];
+  const key = typeof id === "string" ? id.replace(/^NFS/, "") : null;
+  return isAccessKey(key) && id === `NFS${key}` ? key : null;
 }

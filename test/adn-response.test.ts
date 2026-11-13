@@ -93,6 +93,13 @@ describe("interpretDistribution", () => {
     { scenario: "an NSU in exponent notation", docs: [{ NSU: "1e9", TipoDocumento: "EVENTO", ArquivoXml: gzipSync(registeredEvent(EVENT_KEY)).toString("base64") }] },
     // A bare request is not a registered event: importing it would cancel a note that was never cancelled.
     { scenario: "an event that is only the request", docs: [{ NSU: 1, TipoDocumento: "EVENTO", ArquivoXml: gzipSync(request(EVENT_KEY)).toString("base64") }] },
+    // The parser reads truncated XML without complaint; the cursor must not move past it.
+    { scenario: "a truncated NFS-e", docs: [{ NSU: 1, TipoDocumento: "NFSE", ArquivoXml: gzipSync(`<NFSe><infNFSe Id="NFS${EVENT_KEY}"><nNFSe>1`).toString("base64") }] },
+    { scenario: "a truncated event", docs: [{ NSU: 1, TipoDocumento: "EVENTO", ArquivoXml: gzipSync(registeredEvent(EVENT_KEY).slice(0, -20)).toString("base64") }] },
+    {
+      scenario: "a malformed envelope key",
+      docs: [{ NSU: 1, TipoDocumento: "NFSE", ChaveAcesso: "BAD", ArquivoXml: gzipSync(`<NFSe><infNFSe Id="NFS${EVENT_KEY}"/></NFSe>`).toString("base64") }],
+    },
     {
       // The importer updates the note the event names; it must be the note the envelope names.
       scenario: "an event whose envelope key is not the one in its XML",

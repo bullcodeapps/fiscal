@@ -21,7 +21,7 @@ pnpm add github:bullcodeapps/fiscal#v0.3.3
 ```ts
 import { readFileSync } from "node:fs";
 import { loadCertificate } from "@bullcode/fiscal";
-import { buildDps, renderDanfse, SefinClient, SefinError, signDps } from "@bullcode/fiscal/nfse";
+import { buildDps, renderDanfse, SefinClient, signDps } from "@bullcode/fiscal/nfse";
 
 const certificate = loadCertificate(readFileSync("cert.pfx"), process.env.CERT_PASSWORD!);
 
@@ -45,17 +45,10 @@ const dps = buildDps({
 });
 
 const client = new SefinClient({ environment: "restricted", certificate });
-try {
-  const { accessKey, nfseXml } = await client.emit(signDps(dps.xml, certificate));
-  const pdf = await renderDanfse(nfseXml);
-} catch (error) {
-  const certificateRefused = error instanceof SefinError && (error.httpStatus === 401 || error.httpStatus === 403);
-  if (error instanceof SefinError && error.kind === "unavailable" && !certificateRefused) {
-    // No definitive answer: the DPS may have been authorized. Reconcile before resending:
-    const accessKey = await client.findAccessKeyByDpsId(dps.id);
-  }
-  throw error;
-}
+// Throws SefinError. On "unavailable" the DPS may have been authorized: never send a new number, reconcile
+// with findAccessKeyByDpsId(dps.id) as the integration guide shows.
+const { accessKey, nfseXml } = await client.emit(signDps(dps.xml, certificate));
+const pdf = await renderDanfse(nfseXml);
 ```
 
 A production integration also needs persistence, numbering and the retry loop. The

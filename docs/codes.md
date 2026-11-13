@@ -62,7 +62,7 @@ Codes from events (cancellation), from Anexo II (`anexo_ii-sefin_adn-pedregevt_e
 | --- | --- | --- |
 | E0822 | The municipality's cancellation deadline passed (default 730 days when the municipality sets none). | Cancellation is no longer possible through e101101. The taxpayer asks for análise fiscal (event e101103) in the national portal. |
 | E0823 / E0824 / E0827 | Municipal limits: value, note without an identified taker, note with taxes already paid. | Same as E0822. |
-| E0840 | A linked event blocks the cancellation (substitution done, análise fiscal pending). | Check the note's events through the ADN before retrying. |
+| E0840 | A linked event blocks the cancellation (substitution done, análise fiscal pending). | Look for a cancelling event with `findEvent` (step 11 of [integration.md](./integration.md) checks all of them). If none exists, a person checks the note in the national portal. |
 
 ## Rejected DPS: same number or a new one?
 

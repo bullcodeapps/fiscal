@@ -42,6 +42,11 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
   `doc.accessKey` of a note or event comes from its XML. An `EVENTO` must be a registered event (not a bare
   request) whose key matches the envelope, else `unavailable`.
 - `buildDps` requires exactly one taker identity (`CNPJ`, `CPF`, `NIF` or `cNaoNIF`).
+- `tribISSQN` 2 (immunity) and `tpRetISSQN` 3 (withheld by an intermediary) removed: the DPS has no
+  `tpImunidade` or intermediary group, and `buildDps` throws for them. **Breaking** for inputs using them.
+  `docs/dps-input.md` lists the supported scenarios.
+- Access keys and events are read with the XML parser: a key in a comment, an event request outside
+  `infEvento`, malformed ADN XML or a malformed ADN envelope key is `unavailable`.
 - DANFSe shows `cPaisPrestacao` / `cPaisResult` instead of BR for services abroad and exports.
 - MIT license.
 - node-forge 1.4.3 and fast-xml-parser 5.12.0 (security advisories).

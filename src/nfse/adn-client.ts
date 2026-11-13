@@ -92,6 +92,7 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
       throw new AdnError("unavailable", [], response.status);
     }
     return batch.map((doc, index) => {
+      if (doc.ChaveAcesso != null && !isAccessKey(doc.ChaveAcesso)) throw new AdnError("unavailable", [], response.status);
       const envelopeKey = isAccessKey(doc.ChaveAcesso) ? doc.ChaveAcesso : null;
       // The key decides which stored note an import updates, so it comes from the XML itself.
       let xmlKey: string | null = null;

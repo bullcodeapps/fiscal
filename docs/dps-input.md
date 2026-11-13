@@ -3,6 +3,11 @@
 `buildDps(input: DpsInput)` returns `{ id, xml }`. Field names are the official layout names, so every field
 maps to the Anexo I / VI spreadsheets at https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica.
 
+Supported: a provider with CNPJ, issuing for a taker in Brazil or abroad, taxable, exported or not-incident
+ISSQN, withheld by the taker or not, with optional IBS/CBS. Not supported (no input fields): intermediary,
+immunity, suspended ISSQN, discounts, deductions, municipal benefits, withheld federal taxes (PIS/COFINS, IRRF,
+CSLL, CP), construction and event groups. If you need one of these, issue that note elsewhere.
+
 Conventions:
 
 - Codes are strings of digits with no dots or dashes (`cTribNac: "170303"`, not `"17.03.03"`).
@@ -94,9 +99,9 @@ address of a Brazilian taker always is the simple safe choice; a taker abroad ne
 | Field | Type | Notes |
 | --- | --- | --- |
 | `vServ` | `number` | Service value in reais. |
-| `tribISSQN` | `1 \| 2 \| 3 \| 4` | 1 Tributável, 2 Imunidade, 3 Exportação, 4 Não incidência. |
+| `tribISSQN` | `1 \| 3 \| 4` | 1 Tributável, 3 Exportação, 4 Não incidência. 2 (Imunidade) is not supported. |
 | `cPaisResult` | `string` | ISO country where the result happens. Required when `tribISSQN` is 3 (E0590). |
-| `tpRetISSQN` | `1 \| 2 \| 3` | 1 Não retido, 2 Retido pelo tomador, 3 Retido pelo intermediário. |
+| `tpRetISSQN` | `1 \| 2` | 1 Não retido, 2 Retido pelo tomador. 3 (by the intermediary) is not supported. |
 | `pAliq` | `number` | Optional. ISS rate in %, only when the municipality does not fix it. |
 | `totTrib` | `{ pTotTribSN: number } \| { indTotTrib: 0 }` | Simples Nacional ME/EPP: the regime's approximate total rate. Otherwise `{ indTotTrib: 0 }`. |
 

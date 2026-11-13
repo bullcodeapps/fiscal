@@ -45,6 +45,8 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 | `toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)` | Give the foreign taker a `ForeignAddress` (`cPais`, `cEndPost`, `xCidade`, `xEstProvReg`, ...) |
 | `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF (E0223)` | Use `NIF` or `cNaoNIF` instead of `CNPJ` / `CPF` |
 | `serv: comExt is required for a taker abroad, a service abroad or an export (E0330)` | Add `serv.comExt` |
+| `valores: tribISSQN 2 (immunity) is not supported` | The DPS has no `tpImunidade`. Issue immune notes elsewhere |
+| `valores: tpRetISSQN 3 (withheld by an intermediary) is not supported` | The DPS has no intermediary group. Issue these notes elsewhere |
 | `valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)` | Add `valores.cPaisResult` (usually the taker's country) |
 
 ## RangeError (`buildCancellation`)
@@ -64,7 +66,7 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 | --- | --- | --- |
 | Either kind, `httpStatus` 401 or 403 | Sefin refused the TLS client certificate. The request was not processed. | Check the certificate (expired, revoked, wrong CNPJ, not enabled for NFS-e). On `emit`, the DPS number is still unused. On a lookup (`findAccessKeyByDpsId`, `getNfseXml`, `findEvent`) nothing is known: the note or event may exist, so keep the row as it is. |
 | `kind: "rejected"`, a message has code `E0014` | Sefin already holds a note for this `serie` + `nDPS` | Not a rejection: reconcile with `findAccessKeyByDpsId` and check it with `isNfseOfDps` |
-| `kind: "rejected"` (any other case) | Sefin answered 4xx with error messages. Nothing was issued (or, for events, registered). | Show `messages`, fix the data, build and sign again with the same `nDPS` |
+| `kind: "rejected"` (any other case) | Sefin answered 4xx with error messages. On `emit`, nothing was issued. On `registerEvent`, this request was refused, but an earlier send or another event may have cancelled the note: check with `findEvent` before treating it as final | Show `messages`, fix the data, build and sign again with the same `nDPS` |
 | `kind: "unavailable"`, `httpStatus` undefined | Timeout or network failure. No answer arrived. | Treat the DPS as possibly authorized. Reconcile with `findAccessKeyByDpsId` before resending. |
 | `kind: "unavailable"`, other `httpStatus` | 5xx, or an answer the client could not trust: unknown body, malformed gzip, base64 or UTF-8, body or decompressed XML over 10 MB, NFS-e XML that is not well-formed, an access key that is not a valid chave or differs from the note's own `infNFSe` Id, an event that is not well-formed, not the registered `infEvento`, for another access key, event type or sequence, or a 404 that is not Sefin's error JSON (for example a gateway page) | Same as above |
 
