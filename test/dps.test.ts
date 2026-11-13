@@ -90,7 +90,7 @@ describe("export of services", () => {
   const exported: DpsInput = {
     ...accepted,
     toma: { NIF: "98-7654321", xNome: "ACME INC", end: foreignAddress },
-    valores: { ...accepted.valores, tribISSQN: 3 },
+    valores: { ...accepted.valores, tribISSQN: 3, cPaisResult: "US" },
     serv: {
       ...accepted.serv,
       comExt: {
@@ -145,6 +145,13 @@ describe("export of services", () => {
     expect(() =>
       buildDps({ ...exported, serv: { ...exported.serv, comExt: undefined } }),
     ).toThrow("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
+  });
+
+  // Sefin produção answered E0590 for an export to a US taker without it, on 2026-11-13.
+  it("rejects an export without the country of the result (E0590)", () => {
+    expect(() =>
+      buildDps({ ...exported, valores: { ...exported.valores, cPaisResult: undefined } }),
+    ).toThrow("valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)");
   });
 
   it("rejects a service with both cLocPrestacao and cPaisPrestacao", () => {

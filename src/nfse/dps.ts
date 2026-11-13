@@ -141,6 +141,8 @@ export interface Values {
   vServ: number;
   /** 1 Tributável, 2 Imunidade, 3 Exportação, 4 Não incidência. */
   tribISSQN: 1 | 2 | 3 | 4;
+  /** ISO code of the country where the result of an exported service happens; Sefin requires it on exports (E0590). */
+  cPaisResult?: string;
   /** 1 Não retido, 2 Retido pelo tomador, 3 Retido pelo intermediário. */
   tpRetISSQN: 1 | 2 | 3;
   /** ISS rate in %, only when the municipality does not fix it. */
@@ -314,6 +316,9 @@ function assertExportRules(input: DpsInput): void {
   if (valores.tribISSQN === 3 && !serv.comExt) {
     throw new Error("serv: tribISSQN 3 (export of services) requires comExt (E0330)");
   }
+  if (valores.tribISSQN === 3 && !valores.cPaisResult) {
+    throw new Error("valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)");
+  }
   if (serv.comExt && toma && !foreignId) {
     throw new Error("serv: comExt requires a taker abroad (NIF or cNaoNIF), not a CNPJ or CPF");
   }
@@ -374,6 +379,7 @@ export function buildDps(input: DpsInput): BuiltDps {
         group(
           "tribMun",
           leaf("tribISSQN", valores.tribISSQN),
+          leaf("cPaisResult", valores.cPaisResult),
           leaf("tpRetISSQN", valores.tpRetISSQN),
           leaf("pAliq", decimal(valores.pAliq)),
         ),
