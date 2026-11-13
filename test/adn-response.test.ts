@@ -98,6 +98,10 @@ describe("interpretDistribution", () => {
       scenario: "an event with two event groups",
       docs: [{ NSU: 1, TipoDocumento: "EVENTO", ArquivoXml: gzipSync(registeredEvent(EVENT_KEY).replace("<e101101>", "<e105102/><e101101>")).toString("base64") }],
     },
+    {
+      scenario: "an event with the same group twice",
+      docs: [{ NSU: 1, TipoDocumento: "EVENTO", ArquivoXml: gzipSync(registeredEvent(EVENT_KEY).replace("<e101101>", "<e101101/><e101101>")).toString("base64") }],
+    },
     // Unused trailing bits decode to the same bytes, so "strict" must mean canonical.
     { scenario: "non-canonical base64", docs: [{ NSU: 1, TipoDocumento: "EVENTO", ArquivoXml: nonCanonical(registeredEvent(EVENT_KEY)) }] },
     { scenario: "a page entry that is not an object", docs: [null] },

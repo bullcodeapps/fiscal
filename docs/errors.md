@@ -38,7 +38,7 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 | Message | Fix |
 | --- | --- |
 | `cLocEmi: must be the 7-digit IBGE code` | Use `findMunicipalityCode(city, uf)` |
-| `prest: CNPJ must be 14 digits or uppercase letters` | No mask (alphanumeric CNPJ allowed). Use `certificate.cnpj` |
+| `prest: CNPJ must be 14 digits or uppercase letters` | No mask. An alphanumeric CNPJ has letters only in the first 12 characters; the last 2 are digits. Use `certificate.cnpj` |
 | `serie: must be 1 to 5 digits` | For example `"00001"` |
 | `nDPS: must be 1 to 15 digits, not starting with 0` | `String(n)` of a positive integer from your counter |
 | `serv: exactly one of cLocPrestacao or cPaisPrestacao` | Set exactly one of `serv.cLocPrestacao` / `serv.cPaisPrestacao` |

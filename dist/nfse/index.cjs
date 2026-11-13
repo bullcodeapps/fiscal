@@ -386,8 +386,9 @@ function readEventRequest(requestXml) {
   return code ? { accessKey: String(infPedReg?.chNFSe ?? ""), code } : null;
 }
 function eventCode(infPedReg) {
-  const keys = Object.keys(infPedReg && typeof infPedReg === "object" ? infPedReg : {}).filter((k) => /^e\d{6}$/.test(k));
-  return keys.length === 1 ? keys[0].slice(1) : null;
+  const node = infPedReg && typeof infPedReg === "object" ? infPedReg : {};
+  const keys = Object.keys(node).filter((k) => /^e\d{6}$/.test(k));
+  return keys.length === 1 && !Array.isArray(node[keys[0]]) ? keys[0].slice(1) : null;
 }
 function registeredEvent(eventXml) {
   const infEvento = parseOrNull(eventXml)?.evento?.infEvento;

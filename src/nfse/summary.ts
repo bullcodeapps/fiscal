@@ -90,8 +90,10 @@ export function readEventRequest(requestXml: string): { accessKey: string; code:
 
 /** The code of the request's single event group (e101101 is 101101); null for none or more than one. */
 function eventCode(infPedReg: unknown): string | null {
-  const keys = Object.keys(infPedReg && typeof infPedReg === "object" ? infPedReg : {}).filter((k) => /^e\d{6}$/.test(k));
-  return keys.length === 1 ? keys[0].slice(1) : null;
+  const node = (infPedReg && typeof infPedReg === "object" ? infPedReg : {}) as Record<string, unknown>;
+  const keys = Object.keys(node).filter((k) => /^e\d{6}$/.test(k));
+  // The parser folds a repeated group into one key holding an array.
+  return keys.length === 1 && !Array.isArray(node[keys[0]]) ? keys[0].slice(1) : null;
 }
 
 /**

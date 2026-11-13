@@ -25,7 +25,7 @@ import { readFileSync } from "node:fs";
 import { loadCertificate, CertificateError } from "@bullcode/fiscal";
 
 const certificate = loadCertificate(readFileSync("cert.pfx"), password);
-// certificate.cnpj      "11222333000181" (14 digits or uppercase letters, read from the ICP-Brasil OID)
+// certificate.cnpj      "11222333000181" (14 characters, letters only in the first 12; from the ICP-Brasil OID)
 // certificate.validTo   Date; warn the user before it expires
 ```
 

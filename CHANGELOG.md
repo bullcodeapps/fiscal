@@ -19,7 +19,7 @@ New:
 - `renderDanfse(nfseXml, { situation })`: "CANCELADA" / "SUBSTITUÍDA" watermark (NT 008). The DANFSe also
   follows NT 008 for the header, construction and event codes, MEI status, the produção layout and services abroad.
 - `readNfseSummary` returns `dpsId`.
-- Alphanumeric CNPJ (`[0-9A-Z]{14}`) everywhere. Only produção restrita accepts it today.
+- Alphanumeric CNPJ (12 digits or uppercase letters plus 2 numeric check digits) everywhere. Only produção restrita accepts it today.
 
 Breaking (only for inputs Sefin rejected or the DPS cannot describe):
 
