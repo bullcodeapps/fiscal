@@ -46,7 +46,7 @@ Exactly one identity field:
 | `CNPJ: string` (14 digits or uppercase letters, no mask) | Brazilian company |
 | `CPF: string` (11 digits) | Brazilian person |
 | `NIF: string` | Taker abroad, foreign tax id |
-| `cNaoNIF: 0 \| 1 \| 2` | Taker abroad without NIF: 0 not informed, 1 exempt, 2 not required |
+| `cNaoNIF: 1 \| 2` | Taker abroad without NIF: 1 exempt, 2 not required (Sefin rejects 0, E0226) |
 
 Other fields: `xNome` (required, legal name), `fone`, `email`, `end`.
 
@@ -60,33 +60,33 @@ Other fields: `xNome` (required, legal name), `fone`, `email`, `end`.
 
 Both also take `xLgr` (street), `nro` (number, `"SN"` when none), `xCpl` (optional complement), `xBairro` (district).
 
-A national taker's `end` is optional in the type, but Sefin requires it whenever the DPS has `IBSCBS` (E0239).
-Always send it.
+A national taker's `end` is optional in the type. Sefin requires the taker's CNPJ/CPF and national address when
+the IBS/CBS incidence falls on the taker's address in Brazil, which depends on `cIndOp` (E0239). Sending the
+address of a Brazilian taker always is the simple safe choice; a taker abroad never has one.
 
 ## serv (Service)
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `cLocPrestacao` | `string` | IBGE code where the service is provided. |
-| `cPaisPrestacao` | `string` | ISO country where the service is provided. Exactly one of the two. |
+| `cPaisPrestacao` | `string` | ISO country where the service is provided. Exactly one of the two. Requires `comExt`, also with a Brazilian taker (E0330). |
 | `cTribNac` | `string` | Código de Tributação Nacional, 6 digits (`"170303"`). |
 | `cTribMun` | `string` | Optional. Municipal tax code, 3 digits, when the municipality defines one. |
 | `cNBS` | `string` | NBS, 9 digits. Required whenever the DPS has `IBSCBS` (E0322). |
 | `xDescServ` | `string` | Free text description shown on the note. |
-| `comExt` | `ForeignTrade` | Export of services only, and only with a taker abroad (`NIF` or `cNaoNIF`). See below. |
+| `comExt` | `ForeignTrade` | Foreign trade data. Required when the taker is abroad, the service is performed abroad (`cPaisPrestacao`) or `tribISSQN` is 3 (E0330). See below. |
 
 ### serv.comExt (ForeignTrade)
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `mdPrestacao` | `0..4` | 0 Desconhecido, 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas. Remote software work is usually 1. |
+| `mdPrestacao` | `1..4` | 1 Transfronteiriço, 2 Consumo no Brasil, 3 Presença comercial no exterior, 4 Movimento temporário de pessoas (Sefin rejects 0, E0333). Remote software work is usually 1. |
 | `vincPrest` | `0..6 \| 9` | Link between provider and taker. 0 Sem vínculo. |
 | `tpMoeda` | `string` | BACEN currency code, 3 digits. `"220"` USD, `"978"` EUR. |
 | `vServMoeda` | `number` | Service value in that currency. |
 | `mecAFComexP` | `string` | Provider's support mechanism, 2 digits. `"01"` none. |
 | `mecAFComexT` | `string` | Taker's support mechanism, 2 digits. `"01"` none. |
-| `movTempBens` | `0..3` | Temporary movement of goods. 1 Não. |
-| `nDI`, `nRE` | `string` | Optional. Import declaration / export registry numbers. |
+| `movTempBens` | `1` | Not linked to a temporary movement of goods. 2 and 3 need declaration numbers and are not supported yet. |
 | `mdic` | `0 \| 1` | 0 do not send to MDIC, 1 send. |
 
 ## valores (Values)
@@ -132,11 +132,10 @@ a B2B service with standard taxation. Confirm `cIndOp`, `CST` and `cClassTrib` f
 | Message starts with | Rule |
 | --- | --- |
 | `serv: exactly one of cLocPrestacao or cPaisPrestacao` | Set exactly one of the two. |
-| `toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)` | A foreign taker needs a `ForeignAddress`. |
-| `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF` | A `ForeignAddress` needs `NIF` or `cNaoNIF`. |
-| `serv: tribISSQN 3 (export of services) requires comExt (E0330)` | Exports need `serv.comExt`. |
+| `toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)` | A foreign taker needs a `ForeignAddress`. |
+| `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF (E0223)` | A `ForeignAddress` needs `NIF` or `cNaoNIF`. |
+| `serv: comExt is required for a taker abroad, a service abroad or an export (E0330)` | Add `serv.comExt` for a foreign taker, `cPaisPrestacao`, or `tribISSQN` 3. |
 | `valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)` | Exports need `valores.cPaisResult`. |
-| `serv: comExt requires a taker abroad (NIF or cNaoNIF)` | `comExt` only with a foreign taker, never without `toma`. |
 
 Everything else (code tables, field lengths, municipal rules) is validated by Sefin and comes back as a
 `SefinError` with `kind: "rejected"`. See [errors.md](./errors.md).
@@ -200,6 +199,8 @@ const input: DpsInput = {
 `cLocPrestacao` / `cPaisPrestacao` is where the service is performed: remote work done from Brazil uses
 `cLocPrestacao` with the provider's municipality. `cPaisResult` is the country where the result happens, usually
 the taker's. Confirm the scenario with an accountant: Sefin answers E0529 when it sees the service as taxable in Brazil.
+A Brazilian taker with a service performed abroad (`cPaisPrestacao`) also needs `comExt` (E0330). The taker
+below has no Brazilian address, so E0239 does not apply.
 
 ```ts
 const input: DpsInput = {
@@ -241,6 +242,7 @@ const input: DpsInput = {
     },
   },
   valores: { vServ: 10000, tribISSQN: 3, cPaisResult: "US", tpRetISSQN: 1, totTrib: { pTotTribSN: 6 } },
+  // The values the export smoke test sent. Exports usually have their own cIndOp / cClassTrib rows: confirm them.
   IBSCBS: { indFinal: 0, cIndOp: "100301", indDest: 0, CST: "000", cClassTrib: "000001" },
 };
 ```

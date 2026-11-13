@@ -1,7 +1,13 @@
 # Errors
 
 Branch on the error class and its `code` / `kind`, never on message text. This page lists every error the
-library defines. Malformed XML passed to the parsers (`readNfseSummary`, `buildDanfseModel`, ...) throws a plain `Error`.
+library defines.
+
+## Error (parsers)
+
+`readNfseSummary`, `readNfseEventSummary` and `buildDanfseModel` throw a plain `Error` with a message starting
+`Malformed XML:` for XML that does not parse, and `Not an NFS-e: infNFSe is missing` for a document that is not
+an NFS-e. Do not advance an import cursor past such a document: alert and retry later.
 
 ## CertificateError (`loadCertificate`)
 
@@ -27,11 +33,10 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 | `serie: must be 1 to 5 digits` | For example `"00001"` |
 | `nDPS: must be 1 to 15 digits, not starting with 0` | `String(n)` of a positive integer from your counter |
 | `serv: exactly one of cLocPrestacao or cPaisPrestacao` | Set exactly one of `serv.cLocPrestacao` / `serv.cPaisPrestacao` |
-| `toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0223)` | Give the foreign taker a `ForeignAddress` (`cPais`, `cEndPost`, `xCidade`, `xEstProvReg`, ...) |
-| `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF` | Use `NIF` or `cNaoNIF` instead of `CNPJ` / `CPF` |
-| `serv: tribISSQN 3 (export of services) requires comExt (E0330)` | Add `serv.comExt` |
+| `toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)` | Give the foreign taker a `ForeignAddress` (`cPais`, `cEndPost`, `xCidade`, `xEstProvReg`, ...) |
+| `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF (E0223)` | Use `NIF` or `cNaoNIF` instead of `CNPJ` / `CPF` |
+| `serv: comExt is required for a taker abroad, a service abroad or an export (E0330)` | Add `serv.comExt` |
 | `valores: tribISSQN 3 (export of services) requires cPaisResult (E0590)` | Add `valores.cPaisResult` (usually the taker's country) |
-| `serv: comExt requires a taker abroad (NIF or cNaoNIF)` | Remove `comExt`, or identify the taker by `NIF` / `cNaoNIF` |
 
 ## RangeError (`buildCancellation`)
 
@@ -62,13 +67,15 @@ Per method:
 | Method | `rejected` | `unavailable` |
 | --- | --- | --- |
 | `emit` | DPS refused | Note may exist: reconcile |
-| `registerEvent` | Event refused (already cancelled, deadline passed, ...). After an earlier `unavailable`, it does not prove the event failed: confirm with the ADN import | Retry later. A retry is safe |
+| `registerEvent` | Event refused (already cancelled, deadline passed, ...). It is final only when `findEvent` returns null: the refusal can be the duplicate of an event that went through | Look up with `findEvent` before resending |
+| `findEvent` | 4xx with messages: retry later, never read it as "no event" | Retry later. Only `null` (HTTP 404) means the note has no such event |
 | `findAccessKeyByDpsId` | never (404 returns `null`) | Retry later |
 | `getNfseXml` | 404: no note with this key in this environment. For a key you already stored (just emitted or reconciled), treat it as transient and retry | Retry later |
 
 Common Sefin codes are listed in the Anexo of the NFS-e Nacional documentation. Examples the library already
-prevents locally: E0223, E0330, E0590. Sefin also requires `toma.end` (E0239) and `serv.cNBS` (E0322) whenever
-the DPS has `IBSCBS`.
+prevents locally: E0223, E0242, E0330, E0590. Sefin also requires `serv.cNBS` (E0322) whenever
+the DPS has `IBSCBS`, and the taker's CNPJ/CPF and national address when the IBS/CBS incidence falls on that
+address (E0239, depends on `cIndOp`).
 
 ## AdnError (`AdnClient.fetchDocuments`)
 

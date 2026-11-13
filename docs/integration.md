@@ -67,9 +67,9 @@ Create the row before you talk to Sefin. Suggested columns:
 | `nfseXml` | After authorization (from `emit` or `getNfseXml`) |
 | `status` | `draft`, `issuing`, `authorized`, `rejected`, `unavailable`, `conflict`, `cancelling`, `cancelled` |
 | `lease` | Set by each attempt that claims the row (steps 8 and 11) |
-| `cancelReason`, `cancelDescription` | When the user asks to cancel (step 11) |
-| `cancelUncertain` | When a cancellation send ends `unavailable` (step 11) |
-| `cancellationXml` | The event XML Sefin signed back, or the one the ADN import delivered |
+| `cancelEventXml` | The signed cancellation request, stored when the user asks to cancel (step 11) |
+| `cancelSentAt` | Right before each `registerEvent` |
+| `cancellationXml` | The registered event: from `registerEvent`, `findEvent` or the ADN import |
 | `messages` | Sefin's `{ code, description }[]` from the last failure |
 
 Rules:
@@ -246,6 +246,7 @@ export async function issue(
       await save({ status: "unavailable" });
       return "unavailable";
     }
+    if (accessKey) await save({ accessKey }); // persisted before fetching the XML, as on the emit path
   }
 
   // 2. Send. A stored signed DPS is resent as is; only a new or rejected row builds one.
@@ -321,9 +322,12 @@ Use it to show the note. To check that a note found by reconciliation is this ro
 
 ## 11. Cancel
 
-Cancellation can also end with an unknown outcome, so it uses the same lease and fenced writes as issuance,
-and a durable flag for the unknown case. The request handler moves the row from `authorized` to `cancelling`
-(compare-and-set) with `cancelReason`, `cancelDescription` and `cancelUncertain: false`. A worker then runs:
+A cancellation can end with an unknown outcome, so it follows the issuance pattern: validate, persist the
+signed request, send under a lease, and look the event up with `findEvent` before resending or giving up.
+
+At request time, build the signed event first. `buildCancellation` throws `RangeError` on a bad description
+(15 to 255 characters) or key: answer the user and change nothing. Otherwise move the row from `authorized` to
+`cancelling` (compare-and-set) with `cancelEventXml` set and `cancelSentAt` null.
 
 ```ts
 import type { Certificate, Environment } from "@bullcode/fiscal";
@@ -333,10 +337,8 @@ interface CancelRow {
   environment: Environment;
   status: "authorized" | "cancelling" | "cancelled";
   accessKey: string;
-  cancelReason: CancellationReason; // 1 Erro na emissão, 2 Serviço não prestado, 9 Outros
-  cancelDescription: string; // 15 to 255 characters, else RangeError
-  /** True once a send ended `unavailable`: a later rejection may be the duplicate of a registered event. */
-  cancelUncertain: boolean;
+  cancelEventXml: string | null;
+  cancelSentAt: Date | null;
   cancellationXml: string | null;
   messages: SefinMessage[] | null;
 }
@@ -348,53 +350,82 @@ interface CancelStore {
   patch(id: string, lease: string, values: Partial<CancelRow>): Promise<void>;
 }
 
-export async function cancel(store: CancelStore, id: string, certificate: Certificate) {
-  const lease = await store.claim(id);
-  if (!lease) return (await store.load(id)).status;
-  const save = (values: Partial<CancelRow>) => store.patch(id, lease, values);
-  const row = await store.load(id);
-  const eventXml = buildCancellation(
+const CANCELLATION = "101101";
+
+/** Request time. Throws RangeError on invalid input: answer the user, no state change. */
+export function cancellationRequest(row: CancelRow, certificate: Certificate, reason: CancellationReason, description: string) {
+  return buildCancellation(
     {
       environment: row.environment,
       accessKey: row.accessKey,
       authorCnpj: certificate.cnpj,
-      reason: row.cancelReason,
-      description: row.cancelDescription,
+      reason, // 1 Erro na emissão, 2 Serviço não prestado, 9 Outros
+      description,
       verAplic: "my-app-1.0",
       at: new Date(),
     },
     certificate,
   );
-  try {
-    const registered = await new SefinClient({ environment: row.environment, certificate }).registerEvent(row.accessKey, eventXml);
-    await save({ status: "cancelled", cancellationXml: registered, messages: null });
+}
+
+/** Worker. Safe to call again for any row in "cancelling". */
+export async function cancel(store: CancelStore, id: string, certificate: Certificate) {
+  const lease = await store.claim(id);
+  if (!lease) return (await store.load(id)).status;
+  const save = (values: Partial<CancelRow>) => store.patch(id, lease, values);
+  const row = await store.load(id);
+  const client = new SefinClient({ environment: row.environment, certificate });
+  const cancelled = async (eventXml: string) => {
+    await save({ status: "cancelled", cancellationXml: eventXml, messages: null });
     return "cancelled";
+  };
+  const stay = async (e: SefinError) => {
+    await save({ messages: e.messages });
+    return "cancelling";
+  };
+
+  try {
+    // An earlier send may have gone through: look before sending again.
+    if (row.cancelSentAt) {
+      const found = await client.findEvent(row.accessKey, CANCELLATION);
+      if (found) return cancelled(found);
+    }
+    await save({ cancelSentAt: new Date() });
+    return cancelled(await client.registerEvent(row.accessKey, row.cancelEventXml!));
   } catch (e) {
     if (!(e instanceof SefinError)) throw e;
-    const refused = e.httpStatus === 401 || e.httpStatus === 403;
-    if ((e.kind === "rejected" || refused) && !row.cancelUncertain) {
-      await save({ status: "authorized", messages: e.messages });
-      return "authorized";
+    if (e.kind !== "rejected" || e.httpStatus === 401 || e.httpStatus === 403) return stay(e);
+    // A rejection is final only when Sefin holds no cancellation for the note.
+    try {
+      const found = await client.findEvent(row.accessKey, CANCELLATION);
+      if (found) return cancelled(found);
+    } catch {
+      return stay(e);
     }
-    await save({ cancelUncertain: row.cancelUncertain || !refused, messages: e.messages });
-    return "cancelling";
+    await save({ status: "authorized", cancelEventXml: null, cancelSentAt: null, messages: e.messages });
+    return "authorized";
   }
 }
 ```
 
 | Outcome | Row |
 | --- | --- |
-| Success | `cancelled`, with the event XML Sefin signed back |
-| `rejected` (or 401/403) and `cancelUncertain` false | Back to `authorized`, with the messages. Common causes: already cancelled, or a municipal limit (deadline, default 730 days; value; taxes already paid). See the event codes in [codes.md](./codes.md). |
-| `unavailable` | Stays `cancelling`, `cancelUncertain` set. Retry later. |
-| `rejected` and `cancelUncertain` true | Stays `cancelling`: the rejection may be the duplicate of an event that went through. The ADN import (step 12) sets `cancelled` when event 101101 arrives. If none arrives within a day, show the row to a person. |
+| `registerEvent` succeeds, or `findEvent` finds the event | `cancelled`, with the event XML |
+| `rejected` and `findEvent` returns null | Back to `authorized`, with the messages. Common causes: a municipal limit (deadline, default 730 days; value; taxes already paid). See the event codes in [codes.md](./codes.md). |
+| `unavailable`, 401/403, or `findEvent` fails | Stays `cancelling`, with the messages. Retry later (fix the certificate first on 401/403). |
 
 After the municipal deadline, only the taxpayer can ask for análise fiscal in the national portal.
 
 ## 12. Import notes from the ADN
 
-The ADN distributes every document where the CNPJ is provider, taker or intermediary, including notes
-issued outside your app and cancellation events.
+The ADN distributes documents where the queried CNPJ is an interested party (provider, taker or intermediary),
+including notes issued outside your app and their events. Official sources disagree on whether the issuer
+receives its own notes and events back, so do not rely on the ADN import to confirm your own issuances or
+cancellations: use `findAccessKeyByDpsId` and `findEvent` for those. Treat ADN documents for notes the app
+already tracks as idempotent updates.
+
+NSUs are numbered per interested CNPJ, so the cursor and the runner lock are scoped per (environment,
+queried CNPJ): one `AdnStore` per pair.
 
 ```ts
 import { AdnClient, type AdnDocument } from "@bullcode/fiscal/nfse";
@@ -409,10 +440,10 @@ interface AdnStore {
   apply(doc: AdnDocument): Promise<void>;
 }
 
-export async function importFromAdn(store: AdnStore) {
+export async function importFromAdn(store: AdnStore, environment: "production" | "restricted", cnpj: string) {
   if (!(await store.lock())) return;
   try {
-    const adn = new AdnClient({ environment: "production", cnpj: certificate.cnpj, certificate });
+    const adn = new AdnClient({ environment, cnpj, certificate });
     for (;;) {
       const page = await adn.fetchDocuments(await store.lastNsu()); // up to 50, NSU order
       if (page.length === 0) return;
@@ -427,12 +458,14 @@ export async function importFromAdn(store: AdnStore) {
 What `apply` does, inside its transaction:
 
 - Store every document's raw `doc.xml` by `doc.nsu`, whatever its type.
-- `doc.type === "NFSE"`: also upsert the note by `doc.accessKey` with `readNfseSummary(doc.xml)`. A note your app
-  issued is already there; one issued elsewhere is new.
+- `doc.type === "NFSE"`: also upsert the note by `doc.accessKey` with `readNfseSummary(doc.xml)`. A note the app
+  already tracks gets an idempotent update; one issued elsewhere is new.
 - Any other type: read it with `readNfseEventSummary(doc.xml)`. When its `code` is `"101101"` (cancellation),
   set the note with that `accessKey` to `cancelled`, from `authorized` or `cancelling`, and clear its lease in the
   same update, so a stale worker's later fenced write fails instead of overwriting `cancelled`. When `code` is
   null (not an event), keep the raw XML only. Never fail the import on a type you do not know.
+- The parsers throw `Error` on malformed XML. That rolls back the transaction and the cursor stays put: alert
+  someone and retry later.
 - Move the cursor only forward: `UPDATE ... SET last_nsu = $nsu WHERE last_nsu < $nsu`. If the transaction
   fails, the cursor does not move and the next run replays the document.
 
@@ -467,6 +500,6 @@ to drive each branch of step 6.
 - [ ] Reconciliation by `dpsId` before any resend, with `isNfseOfDps(nfseXml, row.signedDpsXml)` on the found note
 - [ ] One attempt per row at a time, every write fenced by the attempt's lease
 - [ ] `nfseXml` stored as personal data; DANFSe rendered from it
-- [ ] Cancellation persisted as `cancelling` before sending, fenced by a lease, with a durable `cancelUncertain` flag
-- [ ] ADN import: one runner at a time, each document and a forward-only cursor in one transaction, events clear the row's lease
+- [ ] Cancellation validated with `buildCancellation` at request time; signed event and `cancelSentAt` persisted before each send; `findEvent` before any resend or final rejection
+- [ ] ADN import: cursor and lock per (environment, CNPJ), one runner at a time, each document and a forward-only cursor in one transaction, events clear the row's lease; never the only confirmation of the app's own notes or cancellations
 - [ ] Environment stored per note and used for queries and cancellation

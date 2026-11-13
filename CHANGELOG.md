@@ -20,7 +20,14 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
 - `AdnClient`: one 10 MB decompression budget per page; an NSU must be a positive integer and base64 must use
   the standard alphabet, else `AdnError` `unavailable`.
 - `loadCertificate` refuses passwords over 256 characters.
-- `buildDps` refuses `comExt` without a taker abroad, also when `toma` is missing.
+- `SefinClient.findEvent(accessKey, eventType, sequence = 1)`: the registered event, or null. Use it before
+  resending a cancellation or treating a refusal as final.
+- `buildDps` requires `serv.comExt` for a taker abroad, a service performed abroad (`cPaisPrestacao`) or an
+  export (E0330). The foreign-address rule is labeled E0242.
+- `readNfseSummary`, `readNfseEventSummary` and `buildDanfseModel` throw `Error` on malformed XML or a document
+  without `infNFSe`.
+- `cNaoNIF` accepts 1 or 2, `comExt.mdPrestacao` 1 to 4, `comExt.movTempBens` only 1; `nDI` / `nRE` removed.
+  **Breaking** only for values Sefin always rejected (E0226, E0333) or that need declaration numbers.
 - `IbsCbs.indDest` accepts only `0`. **Breaking** for inputs passing `1`, which produced an invalid note anyway.
 - MIT license.
 - node-forge 1.4.3 and fast-xml-parser 5.12.0 (security advisories).

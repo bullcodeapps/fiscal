@@ -48,12 +48,12 @@ If the municipality uses its own system, issue there instead.
 | E0312 | O código de tributação nacional informado não está administrado pelo município de incidência do ISSQN... | The municipality does not accept that `cTribNac`. Pick another code or ask the municipality. |
 | E0316 | Código da lista NBS informado inexistente tabela de NBS do sistema. | Use a 9-digit NBS 2.0 code. |
 | E0322 | É obrigatório informar na DPS um item da NBS se for declarada qualquer informação de IBS/CBS. | Send `serv.cNBS` whenever `IBSCBS` is present. |
-| E0239 | O tomador/adquirente de serviço dever ser obrigatoriamente identificado por CNPJ ou CPF e seu endereço nacional informado... | Send `toma` with CNPJ/CPF and a national `end`. |
+| E0239 | O tomador/adquirente de serviço dever ser obrigatoriamente identificado por CNPJ ou CPF e seu endereço nacional informado... | Applies when the IBS/CBS incidence falls on the taker's address in Brazil (depends on `cIndOp`): send `toma` with CNPJ/CPF and a national `end`. |
 | E0718 | A assinatura deve ser feita com o certificado digital do emitente da DPS. | Sign with the provider's own certificate (`prest.CNPJ` equal to `certificate.cnpj`). |
 | E0859 / E0860 | `cIndOp` informed without IBS/CBS taxation, or missing with it. | Follow the `cClassTrib` row: send `IBSCBS` only when it says IBS/CBS applies. |
 | E0901 | cIndOp incorreto para operação de prestação de serviços. | Use a `cIndOp` row with `indNFSe = S`. |
 | E0958 | cClassTrib para IBS/CBS incorreto para operação de prestação de serviços. | Use a `cClassTrib` valid for NFS-e. |
-| E0223 / E0330 / E0590 | Export rules. | `buildDps` checks these before sending. See [errors.md](./errors.md). |
+| E0223 / E0242 / E0330 / E0590 | Foreign taker and export rules. | `buildDps` checks these before sending. See [errors.md](./errors.md). |
 | E0529 | Não é permitido ao emitente da DPS informar que a prestação de serviço se trata de uma exportação de serviço. | The scenario is taxable in Brazil. Do not use `tribISSQN: 3`. |
 
 Codes from events (cancellation), from Anexo II (`anexo_ii-sefin_adn-pedregevt_evt-snnfse-v1-01-20260122.xlsx`):
