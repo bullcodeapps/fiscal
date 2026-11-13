@@ -8,7 +8,7 @@ Branch on the error class and its `code` / `kind`, never on message text.
 
 | `code` | Cause | Fix |
 | --- | --- | --- |
-| `unreadable` | Wrong password, corrupt file, not PKCS#12, or a KDF iteration count above 200,000 | Ask for the `.pfx` and its password again |
+| `unreadable` | Wrong password, corrupt file, not PKCS#12, file over 64 KB, or key-derivation iterations above 300,000 in total | Ask for the `.pfx` and its password again |
 | `missing_key` | The file has the certificate but no private key | Export the full A1 certificate (`.pfx` with key) |
 | `missing_cnpj` | The certificate has no ICP-Brasil CNPJ (OID 2.16.76.1.3.3), for example an e-CPF | Use the company's e-CNPJ A1 |
 
@@ -19,7 +19,7 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 | Message | Fix |
 | --- | --- |
 | `cLocEmi: must be the 7-digit IBGE code` | Use `findMunicipalityCode(city, uf)` |
-| `prest: CNPJ must be 14 digits` | Digits only, no mask. Use `certificate.cnpj` |
+| `prest: CNPJ must be 14 digits or uppercase letters` | No mask (alphanumeric CNPJ allowed). Use `certificate.cnpj` |
 | `serie: must be 1 to 5 digits` | For example `"00001"` |
 | `nDPS: must be 1 to 15 digits, not starting with 0` | `String(n)` of a positive integer from your counter |
 | `serv: exactly one of cLocPrestacao or cPaisPrestacao` | Set exactly one of `serv.cLocPrestacao` / `serv.cPaisPrestacao` |
@@ -33,8 +33,8 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 
 | Message | Fix |
 | --- | --- |
-| `accessKey must be the 50-digit chave de acesso` | Pass `IssuedNfse.accessKey` as stored |
-| `authorCnpj must be 14 digits` | Use `certificate.cnpj` |
+| `accessKey must be the 50-character chave de acesso` | Pass `IssuedNfse.accessKey` as stored |
+| `authorCnpj must be 14 digits or uppercase letters` | Use `certificate.cnpj` |
 | `A justificativa do cancelamento deve ter entre 15 e 255 caracteres.` | `description` must have 15 to 255 characters after trimming |
 
 ## SefinError (`SefinClient`)
@@ -44,19 +44,23 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 
 | Condition | Meaning | Fix |
 | --- | --- | --- |
-| `kind: "rejected"` | Sefin answered 4xx with error messages. Nothing was issued (or, for events, registered). | Show `messages`, fix the data, build and sign again |
+| `kind: "rejected"`, a message has code `E0014` | Sefin already holds a note for this `serie` + `nDPS` | Not a rejection: reconcile with `findAccessKeyByDpsId` |
+| `kind: "rejected"` | Sefin answered 4xx with error messages. Nothing was issued (or, for events, registered). | Show `messages`, fix the data, build and sign again with the same `nDPS` |
 | `kind: "unavailable"`, `httpStatus` 401 or 403 | Sefin refused the TLS client certificate. The request was not processed. | Check the certificate (expired, revoked, wrong CNPJ, not enabled for NFS-e). The DPS number is still unused. |
 | `kind: "unavailable"`, `httpStatus` undefined | Timeout or network failure. No answer arrived. | Treat the DPS as possibly authorized. Reconcile with `findAccessKeyByDpsId` before resending. |
-| `kind: "unavailable"`, other `httpStatus` | 5xx, or an answer the client could not read | Same as above |
+| `kind: "unavailable"`, other `httpStatus` | 5xx, or an answer the client could not read: unknown body, malformed gzip or base64, body or decompressed XML over 10 MB | Same as above |
+
+`timeoutMs` (default 30000) is an inactivity timeout: the request fails when the connection stays idle that long.
+It is not a total deadline.
 
 Per method:
 
 | Method | `rejected` | `unavailable` |
 | --- | --- | --- |
 | `emit` | DPS refused | Note may exist: reconcile |
-| `registerEvent` | Event refused (already cancelled, deadline passed, ...) | Safe to retry: Sefin rejects a duplicate event |
+| `registerEvent` | Event refused (already cancelled, deadline passed, ...). After an earlier `unavailable`, it can also mean the first attempt went through: confirm with the ADN import | Retry later. Sefin rejects a duplicate event |
 | `findAccessKeyByDpsId` | never (404 returns `null`) | Retry later |
-| `getNfseXml` | 404: no note with this key in this environment | Retry later |
+| `getNfseXml` | 404: no note with this key in this environment. For a key you already stored (just emitted or reconciled), treat it as transient and retry | Retry later |
 
 Common Sefin codes are listed in the Anexo of the NFS-e Nacional documentation. Examples the library already
 prevents locally: E0223, E0330, E0590. Sefin also requires `toma.end` (E0239) and `serv.cNBS` (E0322) whenever
@@ -70,4 +74,4 @@ the DPS has `IBSCBS`.
 | --- | --- | --- |
 | `rate_limited` | HTTP 429 | Stop and resume on the next scheduled run |
 | `rejected` | The ADN refused the query (for example the certificate is not from the queried CNPJ's root) | Check `cnpj` and the certificate |
-| `unavailable` | Timeout, network error, 5xx or an unknown body | Retry later from the same `lastNsu` |
+| `unavailable` | Timeout, network error, 5xx, an unknown body, malformed gzip or base64, or a body or document over 10 MB | Retry later from the same `lastNsu` |

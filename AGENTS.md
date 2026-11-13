@@ -41,9 +41,11 @@ pnpm build
 
 ## Rules
 
-- Never commit real certificates, passwords, or real taxpayer data (names, CNPJ/CPF, addresses, emails, phones,
-  certificate blobs). Anonymize any XML captured from Sefin before adding it as a fixture, including the
-  `X509Certificate` inside signatures.
+- Never commit certificates, passwords, personal data (names of people, CPF, emails, phones, personal
+  addresses) or data of private taxpayers. Anonymize any XML captured from Sefin before adding it as a fixture,
+  and drop its `<Signature>` elements: the `X509Certificate` inside carries the representative's CPF.
+  The public registry data of Banco do Brasil (CNPJ 00000000000191), the usual test taker in produção
+  restrita, is fine.
 - Keep the field names of `DpsInput` equal to the official layout names.
 - Every Sefin rule that the XSD does not express goes in `assertExportRules`-style checks in `dps.ts`, with the Sefin code in the message.
 - When behavior changes, update `docs/` in the same commit. Agents in consumer apps read those files from `node_modules`.

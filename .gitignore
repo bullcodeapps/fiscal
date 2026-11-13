@@ -1,1 +1,7 @@
 node_modules
+*.pfx
+*.p12
+*.pem
+*.key
+password*.txt
+.env*

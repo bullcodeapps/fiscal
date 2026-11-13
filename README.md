@@ -49,8 +49,9 @@ try {
   const { accessKey, nfseXml } = await client.emit(signDps(dps.xml, certificate));
   const pdf = await renderDanfse(nfseXml);
 } catch (error) {
-  if (error instanceof SefinError && error.kind === "unavailable") {
-    // The DPS may have been authorized. Reconcile before resending:
+  const certificateRefused = error instanceof SefinError && (error.httpStatus === 401 || error.httpStatus === 403);
+  if (error instanceof SefinError && error.kind === "unavailable" && !certificateRefused) {
+    // No definitive answer: the DPS may have been authorized. Reconcile before resending:
     const accessKey = await client.findAccessKeyByDpsId(dps.id);
   }
   throw error;
@@ -123,3 +124,7 @@ pnpm build && node scripts/smoke-restricted.mjs cert.pfx password.txt          #
 pnpm build && node scripts/smoke-export-restricted.mjs cert.pfx password.txt   # foreign taker
 pnpm build && node scripts/cancel-restricted.mjs cert.pfx password.txt <accessKey>
 ```
+
+## License
+
+[MIT](./LICENSE)

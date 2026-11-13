@@ -7,9 +7,15 @@ Install a version with `pnpm add github:bullcodeapps/fiscal#<tag>`.
 - Docs that ship in the package (`docs/`): integration guide with a reference implementation, `DpsInput`
   reference, error reference. AGENTS.md, an Agent Skill and TSDoc on the main entry points.
 - `docs/codes.md`: where to look up each tax code, municipality adhesion, common Sefin rejection codes.
-- `buildDps` rejects a `cLocEmi`, `prest.CNPJ`, `serie` or `nDPS` that is not digits of the right length, and
+- Alphanumeric CNPJ (`[0-9A-Z]{14}`) in `loadCertificate`, `buildDps`, `buildCancellation` and `AdnClient`.
+- `buildDps` rejects a `cLocEmi`, `prest.CNPJ`, `serie` or `nDPS` with the wrong length or characters, and
   `buildCancellation` does the same for `accessKey` and `authorCnpj`. **Breaking** for inputs with masked
   values (for example a CNPJ with dots), which Sefin rejected anyway (E0004).
+- DANFSe reads `finNFSe` and `CST` / `cClassTrib` in the produção layout too (they showed "-").
+- Sefin and ADN answers over 10 MB (compressed or decompressed), and malformed gzip or base64, throw
+  `SefinError` / `AdnError` `unavailable` instead of raw errors.
+- `loadCertificate` refuses files over 64 KB and more than 300,000 key-derivation iterations in total.
+- MIT license.
 - node-forge 1.4.3 and fast-xml-parser 5.12.0 (security advisories).
 - Pins pnpm 10 in `packageManager`.
 

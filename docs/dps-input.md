@@ -24,13 +24,13 @@ Conventions:
 | `toma` | `Taker` | Optional. The client. Omit only when the note has no identified taker. |
 | `serv` | `Service` | The service. |
 | `valores` | `Values` | Amounts and ISSQN. |
-| `IBSCBS` | `IbsCbs` | Optional. IBS/CBS group of the tax reform. |
+| `IBSCBS` | `IbsCbs` | IBS/CBS group of the tax reform. Optional in the type, but legally required for most services: see below. |
 
 ## prest (Provider)
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `CNPJ` | `string` | 14 digits. Must equal `certificate.cnpj`. |
+| `CNPJ` | `string` | 14 digits or uppercase letters (alphanumeric CNPJ), no mask. Must equal `certificate.cnpj`. |
 | `IM` | `string` | Optional. Municipal registration, when the municipality requires it. |
 | `regTrib.opSimpNac` | `1 \| 2 \| 3 \| 4` | 1 Não optante, 2 MEI, 3 ME/EPP (Simples Nacional), 4 Pendente. |
 | `regTrib.regApTribSN` | `1 \| 2 \| 3` | Required when `opSimpNac` is 3. 1: ISSQN paid inside the Simples Nacional DAS. |
@@ -42,7 +42,7 @@ Exactly one identity field:
 
 | Identity | Taker |
 | --- | --- |
-| `CNPJ: string` (14 digits) | Brazilian company |
+| `CNPJ: string` (14 digits or uppercase letters, no mask) | Brazilian company |
 | `CPF: string` (11 digits) | Brazilian person |
 | `NIF: string` | Taker abroad, foreign tax id |
 | `cNaoNIF: 0 \| 1 \| 2` | Taker abroad without NIF: 0 not informed, 1 exempt, 2 not required |
@@ -100,6 +100,17 @@ Always send it.
 | `totTrib` | `{ pTotTribSN: number } \| { indTotTrib: 0 }` | Simples Nacional ME/EPP: the regime's approximate total rate. Otherwise `{ indTotTrib: 0 }`. |
 
 ## IBSCBS (IbsCbs)
+
+When it is mandatory ([CGNFS-e guidance](https://www.gov.br/nfse/pt-br/noticias/cgnfs-e-orienta-sobre-os-prazos-para%20destaque-de-ibs-cbs-nas-notas-fiscais-de-servico),
+Ato Conjunto RFB/CGIBS nº 4/2026):
+
+- Since 2026-10-01: services subject to ISS in the LC 116 list, except subitems 1.03, 1.05, 1.09 and 16.01.
+- From 2026-12-01: digital platforms, LC 116 subitems 1.03, 1.05, 1.09 and 16.01, intangible goods outside the
+  list, condominium charges, rentals of movable and immovable property, and every other service.
+- From 2027-01-01: Simples Nacional taxpayers who opted in September 2026 to state IBS/CBS.
+
+Until 2026-12-31 Sefin does not reject a DPS without `IBSCBS`, but the note is noncompliant and the issuer is
+subject to sanctions. Send `IBSCBS` whenever the issuer is in one of the groups above.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -184,6 +195,10 @@ const input: DpsInput = {
 ```
 
 ### Export of services (taker abroad)
+
+`cLocPrestacao` / `cPaisPrestacao` is where the service is performed: remote work done from Brazil uses
+`cLocPrestacao` with the provider's municipality. `cPaisResult` is the country where the result happens, usually
+the taker's. Confirm the scenario with an accountant: Sefin answers E0529 when it sees the service as taxable in Brazil.
 
 ```ts
 const input: DpsInput = {
