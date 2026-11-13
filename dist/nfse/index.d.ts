@@ -258,7 +258,10 @@ declare class SefinClient {
     findEvent(accessKey: string, eventType: string, sequence?: number): Promise<string | null>;
     /** Reconciliation after an `unavailable` error. Null when Sefin never authorized it. */
     findAccessKeyByDpsId(dpsId: string): Promise<string | null>;
-    /** The authorized NFS-e XML. `rejected` (HTTP 404) when the key does not exist in this environment. */
+    /**
+     * The authorized NFS-e XML. `rejected` (HTTP 404) when Sefin does not know the key yet: for a key you just
+     * emitted or reconciled, that is propagation, so retry later.
+     */
     getNfseXml(accessKey: string): Promise<string>;
     private request;
 }

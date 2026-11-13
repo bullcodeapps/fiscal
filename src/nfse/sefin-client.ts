@@ -261,7 +261,10 @@ export class SefinClient {
     return interpretDpsLookup(await this.request("GET", `/dps/${encodeURIComponent(dpsId)}`));
   }
 
-  /** The authorized NFS-e XML. `rejected` (HTTP 404) when the key does not exist in this environment. */
+  /**
+   * The authorized NFS-e XML. `rejected` (HTTP 404) when Sefin does not know the key yet: for a key you just
+   * emitted or reconciled, that is propagation, so retry later.
+   */
   async getNfseXml(accessKey: string): Promise<string> {
     return interpretNfseLookup(await this.request("GET", `/nfse/${encodeURIComponent(accessKey)}`), accessKey);
   }

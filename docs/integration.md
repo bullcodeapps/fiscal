@@ -115,7 +115,7 @@ await save({ nfseXml: issued.nfseXml, status: "authorized" });
 | --- | --- | --- |
 | `kind === "rejected"`, a message has code `E0014` | Sefin already holds a note for this `serie` + `nDPS`. | Not a rejection: set `unavailable` and reconcile (step 7). |
 | `kind === "rejected"` (any other code) | Sefin refused the DPS. No note exists. `error.messages` says why (`E0xxx` codes, see [codes.md](./codes.md)). | Set `rejected`, clear `dpsId`, `signedDpsXml` and `sentAt`, show the messages. After the fix, build and sign again with the same `nDPS`. |
-| `kind === "unavailable"` and `httpStatus` is 401 or 403 | Sefin refused the TLS client certificate (expired, revoked, not an e-CNPJ). The DPS was not processed. | Same as a rejection, with a certificate message. |
+| Either kind and `httpStatus` is 401 or 403 | Sefin refused the TLS client certificate (expired, revoked, not an e-CNPJ). The DPS was not processed. | Same as a rejection, with a certificate message. |
 | `kind === "unavailable"` (any other case) | Timeout, network error, 5xx, or an oversized or malformed answer. The note MAY exist. | Set `unavailable`. Do not build a new DPS. Reconcile (step 7). |
 | Any other exception after `emit` was called | Same as `unavailable` | Same as `unavailable` |
 
