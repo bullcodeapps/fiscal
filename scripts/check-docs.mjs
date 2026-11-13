@@ -1,4 +1,4 @@
-// Type-checks every ```ts block of README.md and docs/*.md against the built package (run `pnpm build` first).
+// Type-checks every ```ts block of README.md and docs/*.md against the package that `pnpm check:docs` builds first.
 import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

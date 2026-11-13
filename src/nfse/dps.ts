@@ -36,8 +36,8 @@ export interface Provider {
   CNPJ: string;
   IM?: string;
   regTrib: {
-    /** 1 Não optante, 2 MEI, 3 ME/EPP, 4 Pendente. */
-    opSimpNac: 1 | 2 | 3 | 4;
+    /** 1 Não optante, 2 MEI, 3 ME/EPP. 4 (Pendente, NT 009) is in neither XSD in force yet. */
+    opSimpNac: 1 | 2 | 3;
     /**
      * Required when opSimpNac = 3. 1 federal taxes and ISSQN in the SN, 2 federal in the SN and ISSQN by the
      * municipality, 3 both outside the SN (a sublimit or limit was exceeded).
@@ -333,6 +333,9 @@ function assertExportRules(input: DpsInput): void {
   }
   if ((foreignAddress || serv.cPaisPrestacao !== undefined || valores.tribISSQN === 3) && !serv.comExt) {
     throw new Error("serv: comExt is required for a taker abroad, a service abroad or an export (E0330)");
+  }
+  if ((input.prest.regTrib.opSimpNac as number) === 4) {
+    throw new Error("prest: opSimpNac 4 (pendente) is not accepted by Sefin yet");
   }
   if ((valores.tribISSQN as number) === 2) throw new Error("valores: tribISSQN 2 (immunity) is not supported");
   if ((valores.tpRetISSQN as number) === 3) {

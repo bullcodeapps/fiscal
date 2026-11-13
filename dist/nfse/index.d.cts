@@ -25,8 +25,8 @@ interface Provider {
     CNPJ: string;
     IM?: string;
     regTrib: {
-        /** 1 Não optante, 2 MEI, 3 ME/EPP, 4 Pendente. */
-        opSimpNac: 1 | 2 | 3 | 4;
+        /** 1 Não optante, 2 MEI, 3 ME/EPP. 4 (Pendente, NT 009) is in neither XSD in force yet. */
+        opSimpNac: 1 | 2 | 3;
         /**
          * Required when opSimpNac = 3. 1 federal taxes and ISSQN in the SN, 2 federal in the SN and ISSQN by the
          * municipality, 3 both outside the SN (a sublimit or limit was exceeded).

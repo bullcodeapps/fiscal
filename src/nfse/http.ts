@@ -15,8 +15,10 @@ const UTF8 = new TextDecoder("utf-8", { fatal: true });
 export function gunzipBase64(...values: string[]): string[] {
   let budget = MAX_BYTES;
   return values.map((value) => {
-    if (!BASE64.test(value)) throw new Error("malformed base64");
-    const xml = gunzipSync(Buffer.from(value, "base64"), { maxOutputLength: Math.max(budget, 1) });
+    const bytes = Buffer.from(value, "base64");
+    // Buffer ignores stray trailing bits; only the canonical encoding of the decoded bytes is accepted.
+    if (!BASE64.test(value) || bytes.toString("base64") !== value) throw new Error("malformed base64");
+    const xml = gunzipSync(bytes, { maxOutputLength: Math.max(budget, 1) });
     budget -= xml.length;
     if (budget < 0) throw new Error("decompressed output above size cap");
     // Buffer#toString would turn invalid bytes into U+FFFD and silently change the stored XML.
@@ -61,7 +63,13 @@ export function request(
           if (size > MAX_BYTES) req.destroy(new Error("response above size cap"));
           else chunks.push(chunk);
         });
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }));
+        res.on("end", () => {
+          try {
+            resolve({ status: res.statusCode ?? 0, body: UTF8.decode(Buffer.concat(chunks)) });
+          } catch (error) {
+            reject(error);
+          }
+        });
         res.on("error", reject);
       },
     );

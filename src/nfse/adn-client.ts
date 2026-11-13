@@ -106,7 +106,9 @@ export function interpretDistribution(response: RawResponse): AdnDocument[] {
     });
   }
   const messages = toMessages(json?.Erros);
-  if (status === "REJEICAO") throw new AdnError("rejected", messages, response.status);
+  if (status === "REJEICAO" && response.status >= 400 && response.status < 500) {
+    throw new AdnError("rejected", messages, response.status);
+  }
   throw new AdnError("unavailable", messages, response.status);
 }
 

@@ -489,7 +489,9 @@ After the municipal deadline, only the taxpayer can ask for análise fiscal in t
 A person can also cancel or replace a note in the national portal, and the ADN does not send the issuer its own
 cancellation (step 12). So the app can still show an `authorized` note that Sefin already cancelled. Check with
 `findCancellation(client, row.accessKey)` (above) before you present a note as valid or render it without a
-watermark, and on a schedule for `authorized` notes inside the municipal cancellation window. When it returns an
+watermark, and on a schedule for every `authorized` note: análise fiscal (105104) and de ofício (305101)
+cancellations can come after the municipal deadline. Check recent notes often and older ones less often (for
+example daily in the first months, then weekly). When it returns an
 event, set the row as `cancelled` does in the worker (`substituted` for 105102).
 
 ## 12. Import notes from the ADN

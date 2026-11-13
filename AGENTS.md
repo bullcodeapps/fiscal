@@ -20,7 +20,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm build
-pnpm check:docs   # type-checks every ts block in README.md and docs/ against dist
+pnpm check:docs   # builds, then type-checks every ts block in README.md and docs/
 ```
 
 ## Releases
@@ -28,7 +28,7 @@ pnpm check:docs   # type-checks every ts block in README.md and docs/ against di
 `dist` is committed because consumers install from git tags and never build. Before tagging:
 
 1. Bump `version` in `package.json`.
-2. Run `pnpm build` and commit `dist` with the source change.
+2. Run `pnpm check:docs` (it builds) and commit `dist` with the source change.
 3. Tag `vX.Y.Z`.
 
 ## Tests

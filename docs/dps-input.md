@@ -38,7 +38,7 @@ Conventions:
 | --- | --- | --- |
 | `CNPJ` | `string` | 14 digits or uppercase letters (alphanumeric CNPJ), no mask. Must equal `certificate.cnpj`. Only produção restrita (NT 009 schema) accepts an alphanumeric CNPJ today: the produção schema in force (`nfse-esquemas_xsd-v1-01-20260209`) is digits only, so such a provider cannot issue in produção until NT 009 is deployed there. |
 | `IM` | `string` | Optional. Municipal registration, when the municipality requires it. |
-| `regTrib.opSimpNac` | `1 \| 2 \| 3 \| 4` | 1 Não optante, 2 MEI, 3 ME/EPP (Simples Nacional), 4 Pendente. |
+| `regTrib.opSimpNac` | `1 \| 2 \| 3` | 1 Não optante, 2 MEI, 3 ME/EPP (Simples Nacional). 4 (Pendente) comes with NT 009 and is not accepted yet. |
 | `regTrib.regApTribSN` | `1 \| 2 \| 3` | Required when `opSimpNac` is 3. 1 federal taxes and ISSQN in the Simples Nacional; 2 federal taxes in the SN, ISSQN by the municipality's rules; 3 both outside the SN (the company exceeded a sublimit or limit). |
 | `regTrib.regEspTrib` | `0 \| 1 \| 2 \| 3 \| 4 \| 5 \| 6 \| 9` | Municipal special regime: 0 Nenhum, 1 Ato cooperado (cooperativa), 2 Estimativa, 3 Microempresa municipal, 4 Notário ou registrador, 5 Profissional autônomo, 6 Sociedade de profissionais, 9 Outros. |
 
@@ -54,6 +54,10 @@ Exactly one identity field (`buildDps` throws `toma: exactly one of CNPJ, CPF, N
 | `cNaoNIF: 1 \| 2` | Taker abroad without NIF: 1 exempt, 2 not required (Sefin rejects 0, E0226) |
 
 Other fields: `xNome` (required, legal name), `fone`, `email`, `end`.
+
+A taker with `NIF` or `cNaoNIF` needs a foreign address in `end`. Produção requires it today only with `NIF`
+(E0242); NT 009, which produção restrita runs, extends it to `cNaoNIF`. `buildDps` requires it for both, so one
+input works in both environments and after NT 009 reaches produção.
 
 `end` is a `NationalAddress` or a `ForeignAddress`:
 

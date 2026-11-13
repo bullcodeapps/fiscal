@@ -189,6 +189,12 @@ describe("export of services", () => {
     expect(() => buildDps({ ...accepted, ...patch })).toThrow(message);
   });
 
+  // Neither layout in force has opSimpNac 4 (an NT 009 evolution); settings can cast it past the types.
+  it("rejects opSimpNac 4, which neither XSD in force accepts", () => {
+    const prest = { ...accepted.prest, regTrib: { ...accepted.prest.regTrib, opSimpNac: 4 } } as unknown as typeof accepted.prest;
+    expect(() => buildDps({ ...accepted, prest })).toThrow("prest: opSimpNac 4 (pendente) is not accepted by Sefin yet");
+  });
+
   // The DPS has no tpImunidade or intermediary group, so these notes would be refused or incomplete.
   it.each([
     [{ tribISSQN: 2 }, "valores: tribISSQN 2 (immunity) is not supported"],

@@ -129,9 +129,11 @@ export function isNfseOfDps(nfseXml: string, signedDpsXml: string): boolean {
   return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
 }
 
-const ACCESS_KEY = /^[0-9A-Z]{50}$/;
+// cLocEmi, ambGer and tpInsc (9 digits), the CNPJ or CPF (14, letters only in an alphanumeric CNPJ), then nNFSe,
+// AAMM, a random code and the check digit (27 digits).
+export const ACCESS_KEY = /^\d{9}[0-9A-Z]{14}\d{27}$/;
 
-/** A chave de acesso: 50 digits, or digits and uppercase letters with an alphanumeric CNPJ. */
+/** A chave de acesso: 50 digits, with uppercase letters only in the CNPJ part of an alphanumeric CNPJ. */
 export const isAccessKey = (value: unknown): value is string => typeof value === "string" && ACCESS_KEY.test(value);
 
 /** The access key in the note's own `NFSe/infNFSe/@Id`, or null (also for malformed XML). */

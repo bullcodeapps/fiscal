@@ -25,7 +25,7 @@ Breaking (only for inputs Sefin rejected or the DPS cannot describe):
 
 - `buildDps` validates `cLocEmi`, `prest.CNPJ`, `serie`, `nDPS` and one taker identity, and enforces E0223, E0242,
   E0330 and E0590. `buildCancellation` validates `accessKey`, `authorCnpj` and counts characters correctly.
-- Removed: `tribISSQN` 2, `tpRetISSQN` 3, `IbsCbs.indDest` 1, `cNaoNIF` 0, `movTempBens` 2 and 3, `nDI` / `nRE`.
+- Removed: `opSimpNac` 4 (not in either XSD in force), `tribISSQN` 2, `tpRetISSQN` 3, `IbsCbs.indDest` 1, `cNaoNIF` 0, `movTempBens` 2 and 3, `nDI` / `nRE`.
 - `readNfseSummary`, `readNfseEventSummary` and `buildDanfseModel` throw on malformed XML.
   `readNfseEventSummary` reads only a registered event; a bare request returns code null.
 
@@ -36,7 +36,9 @@ Safer answers from Sefin and the ADN (`unavailable` instead of a wrong result):
 - `findEvent` and `findAccessKeyByDpsId` return null only for Sefin's 404 error JSON.
 - ADN pages: `LoteDFe` array, NSUs positive plain integers in increasing order, documents of a known type
   well-formed and keyed like their envelope.
-- 10 MB limits on bodies and decompressed XML; strict base64 and UTF-8.
+- 10 MB limits on bodies and decompressed XML; canonical base64 and strict UTF-8 in every answer.
+- An access key must have the chave structure (letters only in the CNPJ part). An ADN `REJEICAO` on a 5xx is
+  `unavailable`.
 
 Security:
 

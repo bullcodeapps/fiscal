@@ -43,7 +43,8 @@ Thrown before any network call. The prefix names the DPS field or group, so an a
 | `nDPS: must be 1 to 15 digits, not starting with 0` | `String(n)` of a positive integer from your counter |
 | `serv: exactly one of cLocPrestacao or cPaisPrestacao` | Set exactly one of `serv.cLocPrestacao` / `serv.cPaisPrestacao` |
 | `toma: exactly one of CNPJ, CPF, NIF or cNaoNIF` | Give the taker a single identity field |
-| `toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)` | Give the foreign taker a `ForeignAddress` (`cPais`, `cEndPost`, `xCidade`, `xEstProvReg`, ...) |
+| `toma: a taker identified by NIF or cNaoNIF requires a foreign address in end (E0242)` | Give the foreign taker a `ForeignAddress` (`cPais`, `cEndPost`, `xCidade`, `xEstProvReg`, ...). Produção requires it only with `NIF` today; the library follows NT 009 for both |
+| `prest: opSimpNac 4 (pendente) is not accepted by Sefin yet` | Use 1, 2 or 3 |
 | `toma: a foreign address in end requires the taker to be identified by NIF or cNaoNIF (E0223)` | Use `NIF` or `cNaoNIF` instead of `CNPJ` / `CPF` |
 | `serv: comExt is required for a taker abroad, a service abroad or an export (E0330)` | Add `serv.comExt` |
 | `valores: tribISSQN 2 (immunity) is not supported` | The DPS has no `tpImunidade`. Issue immune notes elsewhere |
@@ -96,5 +97,5 @@ address (E0239, depends on `cIndOp`).
 | `kind` | Cause | Fix |
 | --- | --- | --- |
 | `rate_limited` | HTTP 429 | Stop and resume on the next scheduled run |
-| `rejected` | The ADN refused the query (for example the certificate is not from the queried CNPJ's root) | Check `cnpj` and the certificate |
-| `unavailable` | Timeout, network error, 5xx, an unknown body, a body over 10 MB, a page whose documents decompress to more than 10 MB in total, base64 outside the standard alphabet, malformed gzip, an NSU that is not a positive integer, NSUs not strictly increasing within the page, `DOCUMENTOS_LOCALIZADOS` without a `LoteDFe` array, a page entry that is not an object, a document without `TipoDocumento`, invalid UTF-8, or a note whose access key is malformed or differs from its own `infNFSe` Id | Retry later from the same `lastNsu` |
+| `rejected` | HTTP 4xx with `REJEICAO`: the ADN refused the query (for example the certificate is not from the queried CNPJ's root) | Check `cnpj` and the certificate |
+| `unavailable` | Timeout, network error, 5xx (also with `REJEICAO`), an unknown body, a body over 10 MB, a page whose documents decompress to more than 10 MB in total, base64 that is not canonical standard base64, malformed gzip, an NSU that is not a positive integer, NSUs not strictly increasing within the page, `DOCUMENTOS_LOCALIZADOS` without a `LoteDFe` array, a page entry that is not an object, a document without `TipoDocumento`, invalid UTF-8, or a note whose access key is malformed or differs from its own `infNFSe` Id | Retry later from the same `lastNsu` |

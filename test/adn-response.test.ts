@@ -78,12 +78,21 @@ describe("interpretDistribution", () => {
     body: JSON.stringify({ StatusProcessamento: "DOCUMENTOS_LOCALIZADOS", LoteDFe: docs }),
   });
   const gz = (bytes: number) => gzipSync(Buffer.alloc(bytes)).toString("base64");
+  const nonCanonical = (xml: string) => {
+    let b64 = gzipSync(xml).toString("base64");
+    for (let pad = 0; !b64.endsWith("=="); pad++) b64 = gzipSync(xml + " ".repeat(pad)).toString("base64");
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const last = alphabet.indexOf(b64[b64.length - 3]);
+    return `${b64.slice(0, -3)}${alphabet[last ^ 1]}==`;
+  };
 
   it.each([
     // Each document is under the cap; together they would inflate a small body into memory.
     { scenario: "a page above 10 MB once decompressed", docs: [1, 2, 3].map((nsu) => ({ NSU: nsu, TipoDocumento: "NFSE", ArquivoXml: gz(4 * 1024 * 1024) })) },
     { scenario: "an NSU that is not a positive integer", docs: [{ NSU: "abc", TipoDocumento: "NFSE", ArquivoXml: gz(10) }] },
     { scenario: "base64 with characters outside the alphabet", docs: [{ NSU: 1, TipoDocumento: "NFSE", ArquivoXml: `${gz(10)}!!` }] },
+    // Unused trailing bits decode to the same bytes, so "strict" must mean canonical.
+    { scenario: "non-canonical base64", docs: [{ NSU: 1, TipoDocumento: "EVENTO", ArquivoXml: nonCanonical(registeredEvent(EVENT_KEY)) }] },
     { scenario: "a page entry that is not an object", docs: [null] },
     // Without its type an NFS-e would be handled as an event and skipped for good.
     { scenario: "a document without its type", docs: [{ NSU: 1, ArquivoXml: gz(10) }] },
@@ -114,6 +123,17 @@ describe("interpretDistribution", () => {
     let error: unknown;
     try {
       interpretDistribution(page(docs));
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect((error as AdnError).kind).toBe("unavailable");
+  });
+
+  // A server error is retried; only a 4xx rejection stops the importer for a person to look at.
+  it("treats a rejection status on a server error as unavailable", () => {
+    let error: unknown;
+    try {
+      interpretDistribution({ status: 500, body: JSON.stringify({ StatusProcessamento: "REJEICAO", Erros: [] }) });
     } catch (thrown) {
       error = thrown;
     }

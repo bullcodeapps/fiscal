@@ -60,6 +60,11 @@ describe("buildCancellation", () => {
     );
   });
 
+  // Only the CNPJ part of a chave may hold letters; anything else is a corrupted key Sefin rejects.
+  it("rejects an access key without the chave structure", () => {
+    expect(() => buildCancellation({ ...input, accessKey: "A".repeat(50) }, certificate)).toThrow(RangeError);
+  });
+
   // The schema counts characters; an emoji is two UTF-16 units in JavaScript.
   it("counts characters, not UTF-16 units, in the justification", () => {
     expect(() => buildCancellation({ ...input, description: "😀".repeat(8) }, certificate)).toThrow(RangeError);

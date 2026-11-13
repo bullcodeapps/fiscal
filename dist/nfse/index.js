@@ -140,6 +140,9 @@ function assertExportRules(input) {
   if ((foreignAddress || serv.cPaisPrestacao !== void 0 || valores.tribISSQN === 3) && !serv.comExt) {
     throw new Error("serv: comExt is required for a taker abroad, a service abroad or an export (E0330)");
   }
+  if (input.prest.regTrib.opSimpNac === 4) {
+    throw new Error("prest: opSimpNac 4 (pendente) is not accepted by Sefin yet");
+  }
   if (valores.tribISSQN === 2) throw new Error("valores: tribISSQN 2 (immunity) is not supported");
   if (valores.tpRetISSQN === 3) {
     throw new Error("valores: tpRetISSQN 3 (withheld by an intermediary) is not supported");
@@ -219,8 +222,9 @@ var UTF8 = new TextDecoder("utf-8", { fatal: true });
 function gunzipBase64(...values) {
   let budget = MAX_BYTES;
   return values.map((value) => {
-    if (!BASE64.test(value)) throw new Error("malformed base64");
-    const xml = gunzipSync(Buffer.from(value, "base64"), { maxOutputLength: Math.max(budget, 1) });
+    const bytes = Buffer.from(value, "base64");
+    if (!BASE64.test(value) || bytes.toString("base64") !== value) throw new Error("malformed base64");
+    const xml = gunzipSync(bytes, { maxOutputLength: Math.max(budget, 1) });
     budget -= xml.length;
     if (budget < 0) throw new Error("decompressed output above size cap");
     return UTF8.decode(xml);
@@ -250,7 +254,13 @@ function request(agent, url, method, timeoutMs, body) {
           if (size > MAX_BYTES) req.destroy(new Error("response above size cap"));
           else chunks.push(chunk);
         });
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }));
+        res.on("end", () => {
+          try {
+            resolve({ status: res.statusCode ?? 0, body: UTF8.decode(Buffer.concat(chunks)) });
+          } catch (error) {
+            reject(error);
+          }
+        });
         res.on("error", reject);
       }
     );
@@ -331,7 +341,7 @@ function isNfseOfDps(nfseXml, signedDpsXml) {
   const dps = DPS_DIGEST.exec(signedDpsXml);
   return !!note && !!dps && note[1] === dps[1] && note[2].trim() === dps[2].trim();
 }
-var ACCESS_KEY = /^[0-9A-Z]{50}$/;
+var ACCESS_KEY = /^\d{9}[0-9A-Z]{14}\d{27}$/;
 var isAccessKey = (value) => typeof value === "string" && ACCESS_KEY.test(value);
 function nfseAccessKey(nfseXml) {
   const id = parseOrNull(nfseXml)?.NFSe?.infNFSe?.["@_Id"];
@@ -1084,7 +1094,7 @@ var NAMESPACE2 = "http://www.sped.fazenda.gov.br/nfse";
 var LAYOUT_VERSION2 = "1.01";
 var CANCELLATION = "101101";
 function buildCancellation(input, certificate) {
-  if (!/^[0-9A-Z]{50}$/.test(input.accessKey)) throw new RangeError("accessKey must be the 50-character chave de acesso");
+  if (!ACCESS_KEY.test(input.accessKey)) throw new RangeError("accessKey must be the 50-character chave de acesso");
   if (!/^[0-9A-Z]{14}$/.test(input.authorCnpj)) throw new RangeError("authorCnpj must be 14 digits or uppercase letters");
   const description = input.description.trim();
   const characters = [...description].length;
@@ -1161,7 +1171,9 @@ function interpretDistribution(response) {
     });
   }
   const messages = toMessages2(json?.Erros);
-  if (status === "REJEICAO") throw new AdnError("rejected", messages, response.status);
+  if (status === "REJEICAO" && response.status >= 400 && response.status < 500) {
+    throw new AdnError("rejected", messages, response.status);
+  }
   throw new AdnError("unavailable", messages, response.status);
 }
 var AdnClient = class {
